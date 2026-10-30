@@ -140,10 +140,15 @@ export default function App() {
       setResult(null);
       setIsProcessing(false);
       setThumbnailUrl(null);
+
+      if (!selectedFile) return;
       setFile(selectedFile);
 
       // Read file buffer
       const buffer = await selectedFile.arrayBuffer();
+      if (!buffer || buffer.byteLength === 0) {
+        throw new Error('The uploaded file is empty (0 bytes).');
+      }
       setFileArrayBuffer(buffer);
 
       // Inspect PDF
@@ -156,14 +161,19 @@ export default function App() {
       }
       setFileInfo(info);
 
-      // Render thumbnail of page 1
-      const thumb = await renderPdfPageToDataUrl(buffer, 1, 0.45);
-      if (thumb?.dataUrl) {
-        setThumbnailUrl(thumb.dataUrl);
+      // Render thumbnail of page 1 (non-blocking)
+      try {
+        const thumb = await renderPdfPageToDataUrl(buffer, 1, 0.45);
+        if (thumb?.dataUrl) {
+          setThumbnailUrl(thumb.dataUrl);
+        }
+      } catch (thumbErr) {
+        console.warn('Page 1 thumbnail preview could not be generated:', thumbErr);
       }
     } catch (err) {
       console.error('File load error:', err);
-      setError('Could not process this PDF file. It may be corrupted or in an unsupported format.');
+      const userMessage = err?.message || 'Could not process this PDF file. It may be corrupted or in an unsupported format.';
+      setError(userMessage);
       setFile(null);
       setFileArrayBuffer(null);
     }

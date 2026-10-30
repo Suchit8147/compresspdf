@@ -1,8 +1,13 @@
 import { PDFDocument } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.js?url';
 
-// Configure the worker to use the local static worker in /public
-pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
+// Configure the worker using Vite's bundled worker URL, fallback to local static worker in /public
+if (typeof window !== 'undefined') {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker || '/pdf.worker.min.js';
+}
+
+const CMAP_URL = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/';
 
 /**
  * Format bytes into human readable string (KB, MB)
@@ -22,9 +27,10 @@ export function formatBytes(bytes, decimals = 1) {
  */
 export async function renderPdfPageToDataUrl(arrayBuffer, pageNumber = 1, scale = 1.0, quality = 0.8, grayscale = false) {
   try {
+    const uint8Data = new Uint8Array(arrayBuffer.slice(0));
     const loadingTask = pdfjsLib.getDocument({
-      data: arrayBuffer.slice(0),
-      cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',
+      data: uint8Data,
+      cMapUrl: CMAP_URL,
       cMapPacked: true,
     });
     const pdfDoc = await loadingTask.promise;
@@ -38,8 +44,8 @@ export async function renderPdfPageToDataUrl(arrayBuffer, pageNumber = 1, scale 
     
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
-    canvas.width = Math.floor(viewport.width);
-    canvas.height = Math.floor(viewport.height);
+    canvas.width = Math.max(10, Math.floor(viewport.width));
+    canvas.height = Math.max(10, Math.floor(viewport.height));
     
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -69,30 +75,50 @@ export async function renderPdfPageToDataUrl(arrayBuffer, pageNumber = 1, scale 
       pageCount: pdfDoc.numPages,
     };
   } catch (error) {
-    console.error('Failed to render PDF page:', error);
+    console.warn('Failed to render PDF page thumbnail:', error);
     return null;
   }
 }
 
 /**
- * Inspect PDF metadata and page count
+ * Inspect PDF metadata and page count with precise error diagnostics
  */
 export async function getPdfInfo(arrayBuffer) {
-  // Pre-check encryption using PDFDocument
+  if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+    throw new Error('The selected file is empty (0 bytes). Please upload a valid PDF.');
+  }
+
+  // Pre-check magic bytes (%PDF)
+  const headerBytes = new Uint8Array(arrayBuffer.slice(0, Math.min(10, arrayBuffer.byteLength)));
+  const headerStr = String.fromCharCode(...headerBytes);
+  if (!headerStr.includes('%PDF')) {
+    throw new Error('Invalid file format: This file does not appear to be a valid PDF document (missing %PDF header).');
+  }
+
+  // Pre-check encryption using pdf-lib
+  let isEncrypted = false;
   try {
     await PDFDocument.load(arrayBuffer.slice(0), { ignoreEncryption: false });
   } catch (docErr) {
-    if (docErr.message && (docErr.message.toLowerCase().includes('encrypt') || docErr.message.toLowerCase().includes('password'))) {
+    const msg = (docErr.message || '').toLowerCase();
+    if (msg.includes('encrypt') || msg.includes('password')) {
+      isEncrypted = true;
       return {
         isEncrypted: true,
         pageCount: 0,
+        title: 'Encrypted Document',
       };
     }
-    // If PDFDocument fails with corrupted/invalid structure, pass through to pdfjsLib or throw
   }
 
+  // Next, inspect document using PDF.js
   try {
-    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer.slice(0) });
+    const uint8Data = new Uint8Array(arrayBuffer.slice(0));
+    const loadingTask = pdfjsLib.getDocument({
+      data: uint8Data,
+      cMapUrl: CMAP_URL,
+      cMapPacked: true,
+    });
     const pdf = await loadingTask.promise;
     const metadata = await pdf.getMetadata().catch(() => ({}));
     
@@ -105,13 +131,25 @@ export async function getPdfInfo(arrayBuffer) {
       isEncrypted: false,
     };
   } catch (err) {
-    if (err.name === 'PasswordException' || err.name === 'EncryptedPDFException' || err.message?.toLowerCase().includes('password') || err.message?.toLowerCase().includes('encrypt')) {
+    if (
+      isEncrypted ||
+      err.name === 'PasswordException' ||
+      err.name === 'EncryptedPDFException' ||
+      err.message?.toLowerCase().includes('password') ||
+      err.message?.toLowerCase().includes('encrypt')
+    ) {
       return {
         isEncrypted: true,
         pageCount: 0,
+        title: 'Encrypted Document',
       };
     }
-    throw err;
+
+    if (err.name === 'InvalidPDFException' || err.message?.toLowerCase().includes('invalid pdf')) {
+      throw new Error('Corrupted PDF: This document has an invalid or damaged internal structure.');
+    }
+
+    throw new Error(err.message || 'Could not parse PDF document.');
   }
 }
 
@@ -216,14 +254,19 @@ export async function compressPdf(arrayBuffer, options = {}, onProgress = () => 
   }
 
   // Load via PDF.js to inspect pages
+  const uint8Data = new Uint8Array(arrayBuffer.slice(0));
   const loadingTask = pdfjsLib.getDocument({
-    data: arrayBuffer.slice(0),
-    cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',
+    data: uint8Data,
+    cMapUrl: CMAP_URL,
     cMapPacked: true,
   });
 
   const pdfJsDoc = await loadingTask.promise;
   const numPages = pdfJsDoc.numPages;
+
+  if (numPages <= 0) {
+    throw new Error('The PDF document contains 0 pages.');
+  }
 
   // Determine target budget in bytes
   let targetSizeBytes;
