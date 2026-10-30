@@ -101,24 +101,29 @@ npm run preview
 ```
 
 ### Deploying to Vercel
-```bash
-npx vercel
-```
-Or connect the repository on Vercel (Preset: **Vite**, Root Directory: `./`).
+CompressPDF is pre-configured for instant Vercel deployment with `vercel.json` (rewrites for SPA routing, immutable caching headers, and security policies):
 
-### Deploying to Netlify
-```bash
-npx netlify deploy --prod --dir=dist
-```
-Or drag-and-drop the `dist/` directory into your Netlify dashboard.
+1. **Via Vercel CLI**:
+   ```bash
+   npm i -g vercel
+   vercel
+   ```
+2. **Via GitHub / Vercel Web Dashboard**:
+   - Push this repo to GitHub.
+   - Go to [vercel.com/new](https://vercel.com/new) and select the repository.
+   - Framework Preset: **Vite**
+   - Root Directory: `./`
+   - Build Command: `npm run build`
+   - Output Directory: `dist`
+   - Click **Deploy**.
 
 ---
 
 ## 📬 Contact & Support
 
-For issues, bug reports, or inquiries:
+For issues, bug reports, or partnership inquiries:
 - **Email**: [businesswithsuchit@gmail.com](mailto:businesswithsuchit@gmail.com)
-- **Interactive Form**: Available on the site via the **Contact** button.
+- **Support Endpoint**: Direct AJAX dispatch via FormSubmit and mailto fallback.
 
 ---
 
@@ -128,36 +133,47 @@ For issues, bug reports, or inquiries:
 d:/Pdf Compressor/
 ├── public/
 │   ├── favicon.svg             # Modern vector logo favicon
+│   ├── robots.txt              # Search engine crawler permissions
+│   ├── sitemap.xml             # XML sitemap with all routes for Google indexing
+│   ├── _redirects              # Static SPA redirect fallback
 │   ├── pdf.worker.min.js       # Static WebWorker for PDF.js engine
 │   └── samples/                # Sample test PDFs
 │       ├── sample-invoice.pdf
 │       ├── sample-presentation.pdf
-│       └── sample-brochure.pdf
+│       ├── sample-brochure.pdf
+│       └── sample-scanned.pdf
 ├── src/
+│   ├── pages/
+│   │   ├── AboutUsPage.jsx      # Dedicated About Us page
+│   │   ├── HowItWorksPage.jsx   # Dedicated deep-dive compression algorithm guide
+│   │   ├── PrivacyPolicyPage.jsx# Full Privacy Policy page (GDPR/CCPA/zero-server)
+│   │   ├── TermsPage.jsx        # Dedicated Terms of Service page
+│   │   └── ContactPage.jsx      # Dedicated Contact & Support page with copy button
 │   ├── components/
 │   │   ├── Modals/
-│   │   │   ├── PrivacyModal.jsx # Comprehensive privacy disclosures
-│   │   │   ├── TermsModal.jsx   # Terms of service modal
-│   │   │   └── ContactModal.jsx # Interactive contact form with validation
-│   │   ├── Navbar.jsx           # Responsive header with theme toggle & mobile drawer
+│   │   │   ├── PrivacyModal.jsx # Quick privacy overlay
+│   │   │   ├── TermsModal.jsx   # Quick terms overlay
+│   │   │   └── ContactModal.jsx # Quick contact overlay
+│   │   ├── Navbar.jsx           # Responsive header with theme toggle, mobile drawer & route links
 │   │   ├── HeroUpload.jsx       # Drag-and-drop zone with sample triggers
-│   │   ├── FileConfigCard.jsx   # Level selector, thumbnail & advanced settings
-│   │   ├── ResultCard.jsx       # Metrics, visual reduction bar & download action
+│   │   ├── FileConfigCard.jsx   # Target KB/MB box, level selector & thumbnails
+│   │   ├── ResultCard.jsx       # Metrics, visual reduction bar & side-by-side Page 1 preview
 │   │   ├── HowItWorks.jsx       # 3-step visual guide
 │   │   ├── Features.jsx         # 6 core capability cards
 │   │   ├── CompressionGuide.jsx # Detailed comparison table (Low vs Rec vs High)
 │   │   ├── PrivacySection.jsx   # Security & GDPR/HIPAA compliance explanation
 │   │   ├── FAQ.jsx              # Accordion with schema-friendly FAQ
-│   │   ├── AdContainer.jsx      # AdSense-ready reserved slot
-│   │   └── Footer.jsx           # Navigation, branding & legal links
+│   │   ├── AdContainer.jsx      # AdSense-ready reserved slot (hidden when inactive)
+│   │   └── Footer.jsx           # Full site navigation, branding, contact email & legal links
 │   ├── utils/
 │   │   └── pdfCompressor.js     # Real client-side compression engine & helpers
-│   ├── App.jsx                  # Main state container & page assembler
+│   ├── App.jsx                  # Main state container, client-side routing & page assembler
 │   ├── index.css                # Tailwind directives & glassmorphic styling
 │   └── main.jsx                 # React root bootstrap
 ├── tailwind.config.js           # Brand colors, dark mode & animations
 ├── postcss.config.js            # PostCSS configuration
-├── vite.config.js               # Vite bundler configuration
+├── vercel.json                  # Vercel deployment config, SPA rewrites & headers
+├── vite.config.js               # Vite bundler configuration & chunk splitting
 └── package.json                 # Project dependencies & scripts
 ```
 
