@@ -1,13 +1,9 @@
 import React from 'react';
 import { 
   ShieldCheck, 
-  Cpu, 
   Lock, 
-  Users, 
   Zap, 
-  Heart, 
   CheckCircle2, 
-  ArrowRight,
   Mail,
   FileDown
 } from 'lucide-react';

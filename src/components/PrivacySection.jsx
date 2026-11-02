@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, Lock, ServerOff, EyeOff, FileCheck, CheckCircle2 } from 'lucide-react';
+import { ShieldCheck, Lock, ServerOff, EyeOff, CheckCircle2 } from 'lucide-react';
 
 export default function PrivacySection() {
   const points = [
@@ -45,11 +45,11 @@ export default function PrivacySection() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {points.map((pt, i) => {
+          {points.map((pt) => {
             const Icon = pt.icon;
             return (
               <div 
-                key={i}
+                key={pt.title}
                 className="p-6 rounded-3xl bg-slate-800/60 border border-slate-700/80 backdrop-blur-sm hover:border-indigo-500/50 transition duration-300"
               >
                 <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center mb-4">

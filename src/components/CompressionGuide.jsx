@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, AlertTriangle, FileSpreadsheet, Sparkles, HelpCircle } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 
 export default function CompressionGuide() {
   return (
@@ -27,45 +27,45 @@ export default function CompressionGuide() {
                   <th className="py-4 px-6 font-bold text-slate-900 dark:text-white">Profile</th>
                   <th className="py-4 px-6 font-bold text-slate-900 dark:text-white">Best Used For</th>
                   <th className="py-4 px-6 font-bold text-slate-900 dark:text-white">Typical Reduction</th>
-                  <th className="py-4 px-6 font-bold text-slate-900 dark:text-white">Text Crispness</th>
+                  <th className="py-4 px-6 font-bold text-slate-900 dark:text-white">Text & Vector Retention</th>
                   <th className="py-4 px-6 font-bold text-slate-900 dark:text-white">Image Quality</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-600 dark:text-slate-300">
-                <tr className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                  <td className="py-4 px-6 font-bold text-slate-900 dark:text-white">
-                    <span className="inline-block px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 text-xs font-bold">
-                      Low Compression
-                    </span>
-                  </td>
-                  <td className="py-4 px-6 text-xs">Print materials, architectural drafts, high-res portfolios, legal agreements</td>
-                  <td className="py-4 px-6 text-xs font-semibold text-slate-900 dark:text-white">10% – 30%</td>
-                  <td className="py-4 px-6 text-xs text-emerald-600 dark:text-emerald-400 font-medium">100% Original Vector</td>
-                  <td className="py-4 px-6 text-xs">High Resolution (~150+ DPI)</td>
-                </tr>
-
                 <tr className="bg-indigo-50/30 dark:bg-indigo-950/20 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/40">
                   <td className="py-4 px-6 font-bold text-slate-900 dark:text-white">
                     <span className="inline-block px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-xs font-bold shadow-sm">
-                      Recommended
+                      High Quality (Default)
                     </span>
                   </td>
-                  <td className="py-4 px-6 text-xs">Business reports, resumes, presentations, email attachments</td>
-                  <td className="py-4 px-6 text-xs font-bold text-indigo-600 dark:text-indigo-400">40% – 70%</td>
-                  <td className="py-4 px-6 text-xs text-emerald-600 dark:text-emerald-400 font-medium">Sharp & Very Clear</td>
-                  <td className="py-4 px-6 text-xs">Standard Web (~120 DPI)</td>
+                  <td className="py-4 px-6 text-xs">Legal agreements, architectural drafts, client proposals, print materials</td>
+                  <td className="py-4 px-6 text-xs font-bold text-indigo-600 dark:text-indigo-400">25% – 50%</td>
+                  <td className="py-4 px-6 text-xs text-emerald-600 dark:text-emerald-400 font-medium">Selectable Vector Text Preserved</td>
+                  <td className="py-4 px-6 text-xs">High Fidelity (~82% quality, 1600px)</td>
+                </tr>
+
+                <tr className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                  <td className="py-4 px-6 font-bold text-slate-900 dark:text-white">
+                    <span className="inline-block px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 text-xs font-bold">
+                      Balanced
+                    </span>
+                  </td>
+                  <td className="py-4 px-6 text-xs">Business reports, presentations, resumes, general email attachments</td>
+                  <td className="py-4 px-6 text-xs font-semibold text-slate-900 dark:text-white">40% – 70%</td>
+                  <td className="py-4 px-6 text-xs text-emerald-600 dark:text-emerald-400 font-medium">Selectable Vector Text Preserved</td>
+                  <td className="py-4 px-6 text-xs">Standard Web (~70% quality, 1200px)</td>
                 </tr>
 
                 <tr className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
                   <td className="py-4 px-6 font-bold text-slate-900 dark:text-white">
                     <span className="inline-block px-2.5 py-1 rounded-lg bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 text-xs font-bold">
-                      High Compression
+                      Smaller File
                     </span>
                   </td>
-                  <td className="py-4 px-6 text-xs">Mobile sharing, government portals with strict file size caps (e.g. &lt; 2 MB)</td>
-                  <td className="py-4 px-6 text-xs font-bold text-purple-600 dark:text-purple-400">65% – 85%</td>
-                  <td className="py-4 px-6 text-xs text-slate-700 dark:text-slate-300">Readable</td>
-                  <td className="py-4 px-6 text-xs">Compact (~96 DPI)</td>
+                  <td className="py-4 px-6 text-xs">Upload caps, strict portal size limits (e.g. &lt; 1 MB or &lt; 500 KB)</td>
+                  <td className="py-4 px-6 text-xs font-bold text-purple-600 dark:text-purple-400">60% – 85%</td>
+                  <td className="py-4 px-6 text-xs text-emerald-600 dark:text-emerald-400 font-medium">Selectable Vector Text Preserved</td>
+                  <td className="py-4 px-6 text-xs">Compact Photos (~52% quality, 850px)</td>
                 </tr>
               </tbody>
             </table>

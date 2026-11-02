@@ -22,3 +22,15 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Environment & Local Secrets
+.env
+.env.local
+.env.*.local
+
+# Temporary artifacts & system logs
+.tempmediaStorage
+.system_generated
+scratchpad_*
+*.webp
+audit-report.json

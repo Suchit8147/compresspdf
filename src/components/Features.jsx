@@ -1,13 +1,11 @@
 import React from 'react';
 import { 
-  ShieldCheck, 
   Cpu, 
   Smartphone, 
   Sparkles, 
   FileCheck2, 
   Zap,
-  Lock,
-  Layers
+  Lock
 } from 'lucide-react';
 
 export default function Features() {

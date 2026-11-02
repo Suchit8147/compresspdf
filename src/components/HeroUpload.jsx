@@ -5,10 +5,7 @@ import {
   ShieldCheck, 
   Lock, 
   Sparkles, 
-  AlertCircle,
-  FileSpreadsheet,
-  Layers,
-  CheckCircle2
+  AlertCircle 
 } from 'lucide-react';
 
 export default function HeroUpload({ onFileSelected, error, setError }) {
@@ -16,13 +13,14 @@ export default function HeroUpload({ onFileSelected, error, setError }) {
   const [loadingSample, setLoadingSample] = useState(false);
   const fileInputRef = useRef(null);
 
-  const validateAndHandleFile = (file) => {
+  const validateAndHandleFile = async (file) => {
     setError('');
     if (!file) return;
 
-    // Check type
-    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-    if (!isPdf) {
+    // Check extension & MIME
+    const hasPdfExt = file.name.toLowerCase().endsWith('.pdf');
+    const isPdfMime = file.type === 'application/pdf' || file.type === '';
+    if (!hasPdfExt && !isPdfMime) {
       setError('Invalid file type! Please upload a valid PDF document (.pdf).');
       return;
     }
@@ -30,8 +28,26 @@ export default function HeroUpload({ onFileSelected, error, setError }) {
     // Check size limit: 100 MB max
     const MAX_SIZE = 100 * 1024 * 1024;
     if (file.size > MAX_SIZE) {
-      setError('File is too large! CompressPDF supports files up to 100 MB.');
+      setError('File is too large! CompressPDF supports files up to 100 MB in your browser.');
       return;
+    }
+
+    if (file.size === 0) {
+      setError('The selected file is empty (0 bytes). Please upload a valid PDF.');
+      return;
+    }
+
+    // Binary content validation: check magic bytes (%PDF)
+    try {
+      const headerBlob = file.slice(0, 8);
+      const headerBuffer = await headerBlob.arrayBuffer();
+      const headerStr = String.fromCharCode(...new Uint8Array(headerBuffer));
+      if (!headerStr.includes('%PDF')) {
+        setError('Invalid file format: This file does not appear to contain valid PDF content.');
+        return;
+      }
+    } catch (_readErr) {
+      // Continue to let engine inspect
     }
 
     onFileSelected(file);

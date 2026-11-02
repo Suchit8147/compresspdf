@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, ArrowLeft, ShieldCheck, Mail } from 'lucide-react';
+import { FileText, ArrowLeft, Mail } from 'lucide-react';
 
 export default function TermsPage({ onNavigateHome }) {
   return (

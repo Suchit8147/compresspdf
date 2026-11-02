@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDown, HelpCircle } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 
 export default function FAQ() {
   const [openIndex, setOpenIndex] = useState(0);
@@ -11,7 +11,7 @@ export default function FAQ() {
     },
     {
       q: 'Will compressing my PDF cause text or images to become blurry?',
-      a: 'With Low Compression, vector text and line art remain 100% untouched and razor-sharp, with only structural stream deflating applied. Recommended Compression provides the sweet spot for everyday documents—keeping text crisp while downsizing high-resolution imagery. For strict file-size constraints, High Compression achieves the smallest size while maintaining full readability.',
+      a: 'With High Quality mode, vector text and line art remain untouched, with lossless structural stream compaction and gentle image optimization applied. Balanced mode provides the sweet spot for everyday documents—keeping text clear while downsizing high-resolution imagery. For strict file-size constraints, Smaller File achieves stronger reduction while maintaining readability.',
     },
     {
       q: 'Why did my PDF only shrink by a small percentage or not at all?',

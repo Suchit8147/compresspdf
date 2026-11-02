@@ -18,7 +18,7 @@ export default function AdContainer({ slotId, format = 'auto', className = '' })
       if (window.adsbygoogle && typeof window.adsbygoogle.push === 'function') {
         window.adsbygoogle.push({});
       }
-    } catch (e) {
+    } catch (_e) {
       // AdSense silent handling
     }
   }, [slotId]);

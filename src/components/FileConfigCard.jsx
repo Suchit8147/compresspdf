@@ -6,9 +6,7 @@ import {
   Check, 
   Target, 
   Loader2, 
-  SlidersHorizontal,
   ArrowRight,
-  TrendingDown,
   Sparkles
 } from 'lucide-react';
 import { formatBytes } from '../utils/pdfCompressor';
@@ -28,32 +26,30 @@ export default function FileConfigCard({
   const [targetValue, setTargetValue] = useState('100');
   const [targetUnit, setTargetUnit] = useState('KB');
 
-  const fileKb = Math.max(50, Math.round(file.size / 1024));
-
   const compressionLevels = [
     {
-      id: 'low',
-      title: 'Low Compression',
-      subtitle: 'Maximum Quality',
-      description: 'Preserves sharp typography & vector details.',
-      reductionEstimate: '~35% smaller',
-      badgeColor: 'text-blue-600 bg-blue-50 dark:bg-blue-950/50 border-blue-200 dark:border-blue-800',
-    },
-    {
-      id: 'recommended',
-      title: 'Recommended',
-      subtitle: 'Balanced Quality & Size',
-      description: 'Ideal for email attachments, applications & sharing.',
-      reductionEstimate: '~55% smaller',
+      id: 'high_quality',
+      title: 'High Quality',
+      subtitle: 'Maximum Quality (Default)',
+      description: 'Preserves original vector typography, diagrams & high image fidelity (~82% quality). Recommended for legal, contracts & print.',
+      reductionEstimate: '~25% – 50% smaller',
       recommended: true,
       badgeColor: 'text-indigo-600 bg-indigo-50 dark:bg-indigo-950/50 border-indigo-200 dark:border-indigo-800',
     },
     {
-      id: 'high',
-      title: 'High Compression',
+      id: 'balanced',
+      title: 'Balanced',
+      subtitle: 'Balanced Quality & Size',
+      description: 'Maintains text readability while moderately compressing images (~70% quality). Ideal for email attachments and sharing.',
+      reductionEstimate: '~40% – 70% smaller',
+      badgeColor: 'text-blue-600 bg-blue-50 dark:bg-blue-950/50 border-blue-200 dark:border-blue-800',
+    },
+    {
+      id: 'smaller_file',
+      title: 'Smaller File',
       subtitle: 'Smallest File Size',
-      description: 'Maximum reduction for strict upload caps.',
-      reductionEstimate: '~75% smaller',
+      description: 'Stronger file reduction for upload caps (~52% image quality). Text remains searchable & readable.',
+      reductionEstimate: '~60% – 85% smaller',
       badgeColor: 'text-purple-600 bg-purple-50 dark:bg-purple-950/50 border-purple-200 dark:border-purple-800',
     },
   ];
@@ -96,9 +92,6 @@ export default function FileConfigCard({
   const isCustomTarget = compressionOptions.level === 'custom_target';
   
   // Calculate estimated savings percentage for current target
-  const currentTargetKb = targetUnit === 'MB' ? (parseFloat(targetValue) || 1) * 1024 : (parseFloat(targetValue) || 100);
-  const targetSavingsPct = Math.max(0, Math.min(96, Math.round(((file.size - currentTargetKb * 1024) / file.size) * 100)));
-
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 animate-slide-up">
       <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 shadow-xl shadow-slate-200/50 dark:shadow-none border border-slate-200/80 dark:border-slate-800">
@@ -344,6 +337,14 @@ export default function FileConfigCard({
                   </div>
                 );
               })}
+            </div>
+
+            {/* Quality & Readability Assurance Note */}
+            <div className="mt-3.5 px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-800 flex items-start gap-2.5 text-left text-xs text-slate-500 dark:text-slate-400">
+              <Sparkles className="w-4 h-4 text-indigo-500 flex-shrink-0 mt-0.5" />
+              <p>
+                <strong className="text-slate-700 dark:text-slate-300">Visual Quality Priority:</strong> High Quality is selected by default to ensure original selectable text and vector drawings remain intact. Smaller file options adaptively compress photos while maintaining document readability.
+              </p>
             </div>
           </div>
         </div>

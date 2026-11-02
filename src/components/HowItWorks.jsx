@@ -1,5 +1,5 @@
 import React from 'react';
-import { UploadCloud, Sliders, DownloadCloud, ArrowRight } from 'lucide-react';
+import { UploadCloud, Sliders, DownloadCloud } from 'lucide-react';
 
 export default function HowItWorks() {
   const steps = [
@@ -45,7 +45,7 @@ export default function HowItWorks() {
 
         {/* Steps Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative">
-          {steps.map((step, index) => {
+          {steps.map((step) => {
             const Icon = step.icon;
             return (
               <div 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Mail, Send, CheckCircle2, AlertCircle, Copy, Check, ExternalLink, ArrowLeft, MessageSquare, Clock, ShieldCheck } from 'lucide-react';
+import { Mail, Send, CheckCircle2, AlertCircle, Copy, Check, ExternalLink, ArrowLeft, Clock, ShieldCheck } from 'lucide-react';
 
 export default function ContactPage({ onNavigateHome }) {
   const [formData, setFormData] = useState({

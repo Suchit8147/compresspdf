@@ -9,10 +9,10 @@ CompressPDF is a modern, responsive, production-ready online PDF compression too
 ## 🌟 Key Features
 
 - **100% Client-Side Processing**: Documents are processed locally in your browser memory using WebAssembly, `pdf-lib`, and `pdfjs-dist`. Files never touch a remote server or database.
-- **Three Optimized Compression Levels**:
-  - **Low Compression** – Minimal loss, preserves full vector fidelity and crisp text.
-  - **Recommended Compression** – Balanced profile providing 40%–70% size reduction with sharp readability.
-  - **High Compression** – Maximum reduction (65%–85%) for strict upload caps and email attachments.
+- **Three Optimized Compression Profiles**:
+  - **High Quality (Default)** – Preserves original vector text, lines & high image fidelity (~82% quality, up to 1600px).
+  - **Balanced** – Calibrated reduction (40%–70%) while maintaining clear readability (~70% quality, up to 1200px).
+  - **Smaller File** – Stronger reduction (60%–85%) for strict upload caps (~52% quality, up to 850px).
 - **Custom Target File Size (Typeable KB / MB)**:
   - Users can enter an exact required file size limit (e.g. `40 KB`, `100 KB`, `500 KB`, `1 MB`).
   - Includes a unit toggle (`KB` / `MB`) and quick-select preset chips (`40 KB`, `100 KB`, `200 KB`, `500 KB`, `1 MB`, `2 MB`).

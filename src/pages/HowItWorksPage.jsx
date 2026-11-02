@@ -4,13 +4,9 @@ import {
   Sliders, 
   DownloadCloud, 
   Cpu, 
-  FileText, 
   CheckCircle2, 
-  HelpCircle,
-  ShieldCheck,
-  Target,
-  ArrowRight,
-  FileDown
+  Target, 
+  FileDown 
 } from 'lucide-react';
 
 export default function HowItWorksPage({ onNavigateHome }) {

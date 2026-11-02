@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileDown, ShieldCheck, Mail, ArrowUpRight } from 'lucide-react';
+import { FileDown, ShieldCheck, Mail } from 'lucide-react';
 
 export default function Footer({ 
   navigateTo, 
@@ -7,9 +7,16 @@ export default function Footer({
   onOpenTerms, 
   onOpenContact 
 }) {
+  const currentYear = 2026;
   const handleNav = (page, sectionId = null) => {
     if (navigateTo) {
       navigateTo(page, sectionId);
+    } else if (page === 'privacy' && onOpenPrivacy) {
+      onOpenPrivacy();
+    } else if (page === 'terms' && onOpenTerms) {
+      onOpenTerms();
+    } else if (page === 'contact' && onOpenContact) {
+      onOpenContact();
     } else if (sectionId) {
       const el = document.getElementById(sectionId);
       if (el) el.scrollIntoView({ behavior: 'smooth' });
@@ -145,7 +152,7 @@ export default function Footer({
         {/* Bottom bar */}
         <div className="pt-8 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400 dark:text-slate-500">
           <div>
-            © {new Date().getFullYear()} CompressPDF. All rights reserved. Free client-side PDF compressor.
+            © {currentYear} CompressPDF. All rights reserved. Free client-side PDF compressor.
           </div>
           <div className="flex items-center gap-1">
             Built with modern web standards and client-side cryptography.

@@ -63,7 +63,7 @@ export default function App() {
   const [error, setError] = useState('');
 
   const [compressionOptions, setCompressionOptions] = useState({
-    level: 'recommended',
+    level: 'high_quality',
     targetSizeKb: null,
   });
 

@@ -86,15 +86,24 @@ export default function PrivacyPolicyPage({ onNavigateHome, onOpenContact }) {
             <p>
               If you have any questions or concerns regarding this Privacy Policy, please contact our data controller directly at:
             </p>
-            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 inline-block">
-              <a 
-                href="mailto:businesswithsuchit@gmail.com" 
-                className="font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-2"
-              >
-                <Mail className="w-4 h-4" />
-                <span>businesswithsuchit@gmail.com</span>
-              </a>
-            </div>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                <a 
+                  href="mailto:businesswithsuchit@gmail.com" 
+                  className="font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-2"
+                >
+                  <Mail className="w-4 h-4" />
+                  <span>businesswithsuchit@gmail.com</span>
+                </a>
+                {onOpenContact && (
+                  <button
+                    type="button"
+                    onClick={onOpenContact}
+                    className="text-xs font-semibold text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 underline"
+                  >
+                    Open Contact Form
+                  </button>
+                )}
+              </div>
           </section>
         </div>
 

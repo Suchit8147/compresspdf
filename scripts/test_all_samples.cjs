@@ -1,7 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const { PDFDocument } = require('pdf-lib');
-const pdfjsLib = require('pdfjs-dist/build/pdf.js');
+
+let pdfjsLib;
 
 async function testFile(filename) {
   const filePath = path.join('public/samples', filename);
@@ -41,6 +42,7 @@ async function testFile(filename) {
 }
 
 async function run() {
+  pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const files = fs.readdirSync('public/samples');
   for (const f of files) {
     if (f.endsWith('.pdf')) {

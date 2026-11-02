@@ -5,11 +5,7 @@ import {
   Sun, 
   Menu, 
   X, 
-  Zap,
-  Info,
-  HelpCircle,
-  Mail,
-  Sliders
+  Zap 
 } from 'lucide-react';
 
 export default function Navbar({ 
@@ -26,6 +22,10 @@ export default function Navbar({
     setMobileMenuOpen(false);
     if (externalNavigate) {
       externalNavigate(page, sectionId);
+      return;
+    }
+    if (page === 'contact' && onOpenContact) {
+      onOpenContact();
       return;
     }
     if (setCurrentPage) {
