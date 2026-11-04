@@ -81,7 +81,7 @@ export default function ResultCard({
   const modeTitle = result.modeTitle || (
     result.modeUsed === 'high_quality' ? 'High Quality' :
     result.modeUsed === 'balanced' ? 'Balanced' :
-    result.modeUsed === 'smaller_file' ? 'Smaller File' : 'Standard'
+    result.modeUsed === 'strong_compression' || result.modeUsed === 'smaller_file' ? 'Strong Compression' : 'Standard'
   );
 
   return (

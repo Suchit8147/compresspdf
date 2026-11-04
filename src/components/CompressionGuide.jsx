@@ -59,13 +59,13 @@ export default function CompressionGuide() {
                 <tr className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
                   <td className="py-4 px-6 font-bold text-slate-900 dark:text-white">
                     <span className="inline-block px-2.5 py-1 rounded-lg bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 text-xs font-bold">
-                      Smaller File
+                      Strong Compression
                     </span>
                   </td>
                   <td className="py-4 px-6 text-xs">Upload caps, strict portal size limits (e.g. &lt; 1 MB or &lt; 500 KB)</td>
                   <td className="py-4 px-6 text-xs font-bold text-purple-600 dark:text-purple-400">60% – 85%</td>
                   <td className="py-4 px-6 text-xs text-emerald-600 dark:text-emerald-400 font-medium">Selectable Vector Text Preserved</td>
-                  <td className="py-4 px-6 text-xs">Compact Photos (~52% quality, 850px)</td>
+                  <td className="py-4 px-6 text-xs">Compact Photos (~48% quality, 800px)</td>
                 </tr>
               </tbody>
             </table>

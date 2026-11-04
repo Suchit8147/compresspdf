@@ -1,11 +1,11 @@
 import React from 'react';
 import { FileDown, ShieldCheck, Mail } from 'lucide-react';
 
-export default function Footer({ 
-  navigateTo, 
-  onOpenPrivacy, 
-  onOpenTerms, 
-  onOpenContact 
+export default function Footer({
+  navigateTo,
+  onOpenPrivacy,
+  onOpenTerms,
+  onOpenContact
 }) {
   const currentYear = 2026;
   const handleNav = (page, sectionId = null) => {
@@ -27,10 +27,10 @@ export default function Footer({
     <footer className="bg-white dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 transition-colors">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-16">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-12">
-          
+
           {/* Brand info */}
           <div className="md:col-span-2 space-y-4">
-            <button 
+            <button
               onClick={() => handleNav('home', 'upload-section')}
               className="flex items-center gap-2.5 text-left focus:outline-none group"
               aria-label="CompressPDF Home"
@@ -64,32 +64,32 @@ export default function Footer({
             </h4>
             <ul className="space-y-2 text-sm text-slate-500 dark:text-slate-400">
               <li>
-                <button 
-                  onClick={() => handleNav('home', 'upload-section')} 
+                <button
+                  onClick={() => handleNav('home', 'upload-section')}
                   className="hover:text-indigo-600 dark:hover:text-indigo-400 transition"
                 >
                   Compress PDF
                 </button>
               </li>
               <li>
-                <button 
-                  onClick={() => handleNav('how-it-works')} 
+                <button
+                  onClick={() => handleNav('how-it-works')}
                   className="hover:text-indigo-600 dark:hover:text-indigo-400 transition"
                 >
                   How It Works
                 </button>
               </li>
               <li>
-                <button 
-                  onClick={() => handleNav('home', 'features')} 
+                <button
+                  onClick={() => handleNav('home', 'features')}
                   className="hover:text-indigo-600 dark:hover:text-indigo-400 transition"
                 >
                   Features & Presets
                 </button>
               </li>
               <li>
-                <button 
-                  onClick={() => handleNav('home', 'faq')} 
+                <button
+                  onClick={() => handleNav('home', 'faq')}
                   className="hover:text-indigo-600 dark:hover:text-indigo-400 transition"
                 >
                   FAQ
@@ -105,40 +105,40 @@ export default function Footer({
             </h4>
             <ul className="space-y-2 text-sm text-slate-500 dark:text-slate-400">
               <li>
-                <button 
-                  onClick={() => handleNav('about')} 
+                <button
+                  onClick={() => handleNav('about')}
                   className="hover:text-indigo-600 dark:hover:text-indigo-400 transition"
                 >
                   About Us
                 </button>
               </li>
               <li>
-                <button 
-                  onClick={() => handleNav('privacy')} 
+                <button
+                  onClick={() => handleNav('privacy')}
                   className="hover:text-indigo-600 dark:hover:text-indigo-400 transition"
                 >
                   Privacy Policy
                 </button>
               </li>
               <li>
-                <button 
-                  onClick={() => handleNav('terms')} 
+                <button
+                  onClick={() => handleNav('terms')}
                   className="hover:text-indigo-600 dark:hover:text-indigo-400 transition"
                 >
                   Terms of Service
                 </button>
               </li>
               <li>
-                <button 
-                  onClick={() => handleNav('contact')} 
+                <button
+                  onClick={() => handleNav('contact')}
                   className="hover:text-indigo-600 dark:hover:text-indigo-400 transition"
                 >
                   Contact Support
                 </button>
               </li>
               <li className="pt-2">
-                <a 
-                  href="mailto:businesswithsuchit@gmail.com?subject=CompressPDF%20Support%20Inquiry" 
+                <a
+                  href="mailto:businesswithsuchit@gmail.com?subject=CompressPDF%20Support%20Inquiry"
                   className="inline-flex items-center gap-1.5 text-xs text-indigo-600 dark:text-indigo-400 hover:underline break-all font-semibold"
                 >
                   <Mail className="w-3.5 h-3.5 flex-shrink-0" />

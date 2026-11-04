@@ -11,7 +11,7 @@ export default function FAQ() {
     },
     {
       q: 'Will compressing my PDF cause text or images to become blurry?',
-      a: 'With High Quality mode, vector text and line art remain untouched, with lossless structural stream compaction and gentle image optimization applied. Balanced mode provides the sweet spot for everyday documents—keeping text clear while downsizing high-resolution imagery. For strict file-size constraints, Smaller File achieves stronger reduction while maintaining readability.',
+      a: 'With High Quality mode, vector text and line art remain untouched, with lossless structural stream compaction and gentle image optimization applied. Balanced mode provides the sweet spot for everyday documents—keeping text clear while downsizing high-resolution imagery. For strict file-size constraints, Strong Compression achieves stronger reduction with a clear quality warning, while keeping text readable.',
     },
     {
       q: 'Why did my PDF only shrink by a small percentage or not at all?',

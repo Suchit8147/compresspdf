@@ -30,7 +30,7 @@ export default function FileConfigCard({
     {
       id: 'high_quality',
       title: 'High Quality',
-      subtitle: 'Maximum Quality (Default)',
+      subtitle: 'Sharp Text & High Fidelity',
       description: 'Preserves original vector typography, diagrams & high image fidelity (~82% quality). Recommended for legal, contracts & print.',
       reductionEstimate: '~25% – 50% smaller',
       recommended: true,
@@ -39,16 +39,16 @@ export default function FileConfigCard({
     {
       id: 'balanced',
       title: 'Balanced',
-      subtitle: 'Balanced Quality & Size',
-      description: 'Maintains text readability while moderately compressing images (~70% quality). Ideal for email attachments and sharing.',
+      subtitle: 'Optimized Quality & Size',
+      description: 'Maintains text readability while moderately compressing images (~68% quality). Ideal for email attachments and sharing.',
       reductionEstimate: '~40% – 70% smaller',
       badgeColor: 'text-blue-600 bg-blue-50 dark:bg-blue-950/50 border-blue-200 dark:border-blue-800',
     },
     {
-      id: 'smaller_file',
-      title: 'Smaller File',
-      subtitle: 'Smallest File Size',
-      description: 'Stronger file reduction for upload caps (~52% image quality). Text remains searchable & readable.',
+      id: 'strong_compression',
+      title: 'Strong Compression',
+      subtitle: 'Maximum File Reduction',
+      description: 'Strongest preset reduction (~48% quality, up to 800px). Photo resolution is compacted (warning: mild visual artifacts); text remains readable.',
       reductionEstimate: '~60% – 85% smaller',
       badgeColor: 'text-purple-600 bg-purple-50 dark:bg-purple-950/50 border-purple-200 dark:border-purple-800',
     },
@@ -293,7 +293,7 @@ export default function FileConfigCard({
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {compressionLevels.map((lvl) => {
-                const isSelected = compressionOptions.level === lvl.id;
+                const isSelected = compressionOptions.level === lvl.id || (lvl.id === 'strong_compression' && compressionOptions.level === 'smaller_file');
                 return (
                   <div
                     key={lvl.id}

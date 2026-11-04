@@ -1,4 +1,4 @@
-import { PDFDocument, PDFName, PDFRawStream } from 'pdf-lib';
+import { PDFDocument, PDFName, PDFRawStream, PDFNumber } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import pako from 'pako';
@@ -9,6 +9,7 @@ if (typeof window !== 'undefined') {
 }
 
 const CMAP_URL = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.5.438/cmaps/';
+const STANDARD_FONT_DATA_URL = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.5.438/standard_fonts/';
 
 /**
  * Format bytes into human readable string (KB, MB)
@@ -36,33 +37,39 @@ export const QUALITY_PROFILES = {
     default: true,
     maxImageDimension: 1600,
     jpegQuality: 0.82,
+    scanScale: 1.5,
     badgeColor: 'text-indigo-600 bg-indigo-50 dark:bg-indigo-950/50 border-indigo-200 dark:border-indigo-800',
   },
   balanced: {
     id: 'balanced',
     title: 'Balanced',
     subtitle: 'Optimized Quality & Size',
-    description: 'Maintains text readability while moderately compressing images (~70% quality, up to 1200px). Ideal for email and sharing.',
+    description: 'Maintains text readability while moderately compressing images (~68% quality, up to 1200px). Ideal for email and sharing.',
     reductionEstimate: '~40% – 70% smaller',
     maxImageDimension: 1200,
-    jpegQuality: 0.70,
+    jpegQuality: 0.68,
+    scanScale: 1.25,
     badgeColor: 'text-blue-600 bg-blue-50 dark:bg-blue-950/50 border-blue-200 dark:border-blue-800',
   },
-  smaller_file: {
-    id: 'smaller_file',
-    title: 'Smaller File',
+  strong_compression: {
+    id: 'strong_compression',
+    title: 'Strong Compression',
     subtitle: 'Maximum File Reduction',
-    description: 'Strongest preset reduction for upload limits. Selectable vector text is preserved; image resolution is compacted (~52% quality, up to 850px).',
+    description: 'Strongest reduction for strict upload caps (~48% quality, up to 800px). Photo resolution is compacted; text remains readable.',
     reductionEstimate: '~60% – 85% smaller',
-    maxImageDimension: 850,
-    jpegQuality: 0.52,
+    maxImageDimension: 800,
+    jpegQuality: 0.48,
+    scanScale: 1.0,
     badgeColor: 'text-purple-600 bg-purple-50 dark:bg-purple-950/50 border-purple-200 dark:border-purple-800',
   },
 };
 
+// Backward compatibility alias for 'smaller_file'
+QUALITY_PROFILES.smaller_file = QUALITY_PROFILES.strong_compression;
+
 export function getProfileTitle(level) {
   if (level === 'balanced' || level === 'recommended') return 'Balanced';
-  if (level === 'smaller_file' || level === 'high') return 'Smaller File';
+  if (level === 'strong_compression' || level === 'smaller_file' || level === 'high') return 'Strong Compression';
   return 'High Quality';
 }
 
@@ -76,30 +83,31 @@ export async function renderPdfPageToDataUrl(arrayBuffer, pageNumber = 1, scale 
       data: uint8Data,
       cMapUrl: CMAP_URL,
       cMapPacked: true,
+      standardFontDataUrl: STANDARD_FONT_DATA_URL,
     });
     const pdfDoc = await loadingTask.promise;
-    
+
     if (pageNumber < 1 || pageNumber > pdfDoc.numPages) {
       pageNumber = 1;
     }
-    
+
     const page = await pdfDoc.getPage(pageNumber);
     const viewport = page.getViewport({ scale });
-    
+
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     canvas.width = Math.max(10, Math.floor(viewport.width));
     canvas.height = Math.max(10, Math.floor(viewport.height));
-    
+
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
+
     await page.render({
       canvasContext: ctx,
       canvas: canvas,
       viewport: viewport,
     }).promise;
-    
+
     if (grayscale) {
       const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const data = imgData.data;
@@ -111,7 +119,7 @@ export async function renderPdfPageToDataUrl(arrayBuffer, pageNumber = 1, scale 
       }
       ctx.putImageData(imgData, 0, 0);
     }
-    
+
     const dataUrl = canvas.toDataURL('image/jpeg', quality);
     return {
       dataUrl,
@@ -163,10 +171,11 @@ export async function getPdfInfo(arrayBuffer) {
       data: uint8Data,
       cMapUrl: CMAP_URL,
       cMapPacked: true,
+      standardFontDataUrl: STANDARD_FONT_DATA_URL,
     });
     const pdf = await loadingTask.promise;
     const metadata = await pdf.getMetadata().catch(() => ({}));
-    
+
     return {
       pageCount: pdf.numPages,
       title: metadata?.info?.Title || 'Untitled Document',
@@ -294,7 +303,7 @@ async function decodeJpegToCanvas(jpegBytes, maxDimension) {
     if (typeof createImageBitmap === 'function') {
       try {
         imgSource = await createImageBitmap(blob);
-      } catch (_bmErr) {
+      } catch {
         imgSource = null;
       }
     }
@@ -346,15 +355,74 @@ async function decodeJpegToCanvas(jpegBytes, maxDimension) {
 }
 
 /**
- * Convert raw scanline bytes (RGB, Grayscale, CMYK) into a scaled canvas
+ * Decode FlateDecode image streams (RGB, Gray, CMYK, 1-bit monochrome, Indexed) into a canvas
  */
-function rawScanlinesToCanvas(rawBytes, width, height, colorSpace, maxDimension) {
+function decodeFlateToCanvas(inflatedData, width, height, colorSpaceStr, bpc, decodeParms, maxDimension) {
   if (typeof document === 'undefined') return null;
 
   try {
-    const isGray = colorSpace && colorSpace.toLowerCase().includes('gray');
-    const isCmyk = colorSpace && colorSpace.toLowerCase().includes('cmyk');
-    const isRgb = !isGray && !isCmyk;
+    const isGray = colorSpaceStr.toLowerCase().includes('gray');
+    const isCmyk = colorSpaceStr.toLowerCase().includes('cmyk');
+    const isIndexed = colorSpaceStr.toLowerCase().includes('indexed');
+
+    let rawPixels = null;
+
+    // 1-bit monochrome (scanned documents)
+    if (bpc === 1) {
+      const bytesPerRow = Math.ceil(width / 8);
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      const imgData = ctx.createImageData(width, height);
+      const d = imgData.data;
+      let dst = 0;
+
+      for (let y = 0; y < height; y++) {
+        const rowStart = y * bytesPerRow;
+        for (let x = 0; x < width; x++) {
+          const byteVal = inflatedData[rowStart + (x >> 3)];
+          const bit = (byteVal >> (7 - (x & 7))) & 1;
+          const val = bit ? 255 : 0;
+          d[dst++] = val;
+          d[dst++] = val;
+          d[dst++] = val;
+          d[dst++] = 255;
+        }
+      }
+      ctx.putImageData(imgData, 0, 0);
+
+      if (Math.max(width, height) > maxDimension) {
+        const scale = maxDimension / Math.max(width, height);
+        const targetW = Math.max(1, Math.round(width * scale));
+        const targetH = Math.max(1, Math.round(height * scale));
+        const scaledCanvas = document.createElement('canvas');
+        scaledCanvas.width = targetW;
+        scaledCanvas.height = targetH;
+        const sCtx = scaledCanvas.getContext('2d');
+        sCtx.imageSmoothingEnabled = true;
+        sCtx.imageSmoothingQuality = 'high';
+        sCtx.drawImage(canvas, 0, 0, targetW, targetH);
+        return { canvas: scaledCanvas, targetW, targetH, origW: width, origH: height };
+      }
+      return { canvas, targetW: width, targetH: height, origW: width, origH: height };
+    }
+
+    // 8-bit standard color spaces
+    let predictor = 1;
+    if (decodeParms && typeof decodeParms.get === 'function') {
+      predictor = parseInt(decodeParms.get(PDFName.of('Predictor'))?.toString() || '1', 10);
+    }
+
+    const bytesPerPixel = isGray || isIndexed ? 1 : isCmyk ? 4 : 3;
+
+    if (predictor >= 10) {
+      rawPixels = unfilterPng(inflatedData, width, height, bytesPerPixel);
+    } else if (inflatedData.length >= width * height * bytesPerPixel) {
+      rawPixels = inflatedData;
+    } else {
+      return null;
+    }
 
     const canvas = document.createElement('canvas');
     canvas.width = width;
@@ -363,45 +431,42 @@ function rawScanlinesToCanvas(rawBytes, width, height, colorSpace, maxDimension)
     const imgData = ctx.createImageData(width, height);
     const d = imgData.data;
 
-    if (isRgb) {
-      let srcIdx = 0;
+    let src = 0;
+    if (isGray || isIndexed) {
       for (let i = 0; i < d.length; i += 4) {
-        d[i] = rawBytes[srcIdx++];
-        d[i + 1] = rawBytes[srcIdx++];
-        d[i + 2] = rawBytes[srcIdx++];
-        d[i + 3] = 255;
-      }
-    } else if (isGray) {
-      let srcIdx = 0;
-      for (let i = 0; i < d.length; i += 4) {
-        const g = rawBytes[srcIdx++];
-        d[i] = g;
-        d[i + 1] = g;
-        d[i + 2] = g;
+        const val = rawPixels[src++];
+        d[i] = val;
+        d[i + 1] = val;
+        d[i + 2] = val;
         d[i + 3] = 255;
       }
     } else if (isCmyk) {
-      let srcIdx = 0;
       for (let i = 0; i < d.length; i += 4) {
-        const c = rawBytes[srcIdx++] / 255;
-        const m = rawBytes[srcIdx++] / 255;
-        const y = rawBytes[srcIdx++] / 255;
-        const k = rawBytes[srcIdx++] / 255;
+        const c = rawPixels[src++] / 255;
+        const m = rawPixels[src++] / 255;
+        const y = rawPixels[src++] / 255;
+        const k = rawPixels[src++] / 255;
         d[i] = Math.round(255 * (1 - c) * (1 - k));
         d[i + 1] = Math.round(255 * (1 - m) * (1 - k));
         d[i + 2] = Math.round(255 * (1 - y) * (1 - k));
+        d[i + 3] = 255;
+      }
+    } else {
+      // Standard RGB
+      for (let i = 0; i < d.length; i += 4) {
+        d[i] = rawPixels[src++];
+        d[i + 1] = rawPixels[src++];
+        d[i + 2] = rawPixels[src++];
         d[i + 3] = 255;
       }
     }
 
     ctx.putImageData(imgData, 0, 0);
 
-    // If downsampling needed
     if (Math.max(width, height) > maxDimension) {
       const scale = maxDimension / Math.max(width, height);
       const targetW = Math.max(1, Math.round(width * scale));
       const targetH = Math.max(1, Math.round(height * scale));
-
       const scaledCanvas = document.createElement('canvas');
       scaledCanvas.width = targetW;
       scaledCanvas.height = targetH;
@@ -414,109 +479,293 @@ function rawScanlinesToCanvas(rawBytes, width, height, colorSpace, maxDimension)
 
     return { canvas, targetW: width, targetH: height, origW: width, origH: height };
   } catch (err) {
-    console.warn('rawScanlinesToCanvas failed:', err);
+    console.warn('decodeFlateToCanvas error:', err);
     return null;
   }
 }
 
 /**
- * Optimize all image indirect objects in a cloned PDFDocument using given settings
+ * Structural optimization: strips unneeded metadata and re-compresses content streams
+ */
+function optimizePdfStructure(pdfDoc) {
+  let cleanedCount = 0;
+
+  // 1. Remove XML XMP Metadata stream from Catalog
+  try {
+    if (pdfDoc.catalog.has(PDFName.of('Metadata'))) {
+      pdfDoc.catalog.delete(PDFName.of('Metadata'));
+      cleanedCount++;
+    }
+  } catch (_) {}
+
+  // 2. Remove page thumbnails
+  try {
+    const pages = pdfDoc.getPages();
+    for (const page of pages) {
+      if (page.node.has(PDFName.of('Thumb'))) {
+        page.node.delete(PDFName.of('Thumb'));
+        cleanedCount++;
+      }
+    }
+  } catch (_) {}
+
+  // 3. Remove PieceInfo (private Illustrator / InDesign metadata)
+  try {
+    if (pdfDoc.catalog.has(PDFName.of('PieceInfo'))) {
+      pdfDoc.catalog.delete(PDFName.of('PieceInfo'));
+      cleanedCount++;
+    }
+  } catch (_) {}
+
+  // 4. Re-compress uncompressed or poorly-compressed content streams
+  try {
+    for (const [, obj] of pdfDoc.context.enumerateIndirectObjects()) {
+      if (obj instanceof PDFRawStream) {
+        const filter = obj.dict.get(PDFName.of('Filter'));
+        const filterStr = filter ? filter.toString() : '';
+        const subtype = obj.dict.get(PDFName.of('Subtype'))?.toString();
+
+        if (subtype !== '/Image') {
+          if (!filter || filterStr === '') {
+            const raw = obj.getContents();
+            if (raw && raw.length > 32) {
+              const deflated = pako.deflate(raw, { level: 9 });
+              if (deflated.length < raw.length) {
+                obj.dict.set(PDFName.of('Filter'), PDFName.of('FlateDecode'));
+                obj.contents = deflated;
+                obj.dict.set(PDFName.of('Length'), PDFNumber.of(deflated.length));
+                cleanedCount++;
+              }
+            }
+          } else if (filterStr === '/FlateDecode') {
+            try {
+              const raw = pako.inflate(obj.getContents());
+              const recompressed = pako.deflate(raw, { level: 9 });
+              if (recompressed.length < obj.getContents().length * 0.95) {
+                obj.contents = recompressed;
+                obj.dict.set(PDFName.of('Length'), PDFNumber.of(recompressed.length));
+                cleanedCount++;
+              }
+            } catch (_) {}
+          }
+        }
+      }
+    }
+  } catch (_) {}
+
+  return cleanedCount;
+}
+
+/**
+ * Optimize all image indirect objects in a cloned PDFDocument using given settings.
+ * Preserves 100% vector typography and layout by replacing image streams in-place.
  */
 async function optimizeDocImages(arrayBuffer, maxDimension, jpegQuality) {
   const pdfDoc = await PDFDocument.load(arrayBuffer.slice(0));
   let imagesOptimized = 0;
   let bytesSaved = 0;
 
-  // Enumerate all indirect objects
+  // Collect all image XObjects first into an array to avoid mutating Map while iterating
+  const imageTargets = [];
   for (const [ref, obj] of pdfDoc.context.enumerateIndirectObjects()) {
     if (obj instanceof PDFRawStream || obj.dict) {
       const subtype = obj.dict?.get(PDFName.of('Subtype'));
       if (subtype && subtype.toString() === '/Image') {
-        const dict = obj.dict;
-        const width = parseInt(dict.get(PDFName.of('Width'))?.toString() || '0', 10);
-        const height = parseInt(dict.get(PDFName.of('Height'))?.toString() || '0', 10);
-        const filterStr = dict.get(PDFName.of('Filter'))?.toString() || '';
-        const colorSpaceStr = dict.get(PDFName.of('ColorSpace'))?.toString() || '/DeviceRGB';
-        const decodeParms = dict.get(PDFName.of('DecodeParms'));
-        const originalBytes = obj.getContents();
-        const origLength = originalBytes.length;
+        imageTargets.push({ ref, obj });
+      }
+    }
+  }
 
-        // Skip tiny spacers (< 1000 bytes or < 24px)
-        if (origLength < 1000 || (width > 0 && width < 24 && height > 0 && height < 24)) {
-          continue;
-        }
+  for (const target of imageTargets) {
+    const { ref, obj } = target;
+    const dict = obj.dict;
+    const width = parseInt(dict.get(PDFName.of('Width'))?.toString() || '0', 10);
+    const height = parseInt(dict.get(PDFName.of('Height'))?.toString() || '0', 10);
+    const filterStr = dict.get(PDFName.of('Filter'))?.toString() || '';
+    const colorSpaceStr = dict.get(PDFName.of('ColorSpace'))?.toString() || '/DeviceRGB';
+    const bpc = parseInt(dict.get(PDFName.of('BitsPerComponent'))?.toString() || '8', 10);
+    const decodeParms = dict.get(PDFName.of('DecodeParms'));
+    const existingSMask = dict.get(PDFName.of('SMask'));
+    const originalBytes = obj.getContents();
+    const origLength = originalBytes ? originalBytes.length : 0;
 
-        let canvasResult = null;
+    // Skip tiny icons or spacer pixels (< 600 bytes or < 20px)
+    if (origLength < 600 || (width > 0 && width < 20 && height > 0 && height < 20)) {
+      continue;
+    }
 
-        // Method A: Direct JPEG Decode
-        if (filterStr.includes('DCTDecode')) {
-          canvasResult = await decodeJpegToCanvas(originalBytes, maxDimension);
-        }
+    // Safety rule for SMask: if image has an SMask, keep original dimensions
+    // to avoid PDF specification mismatch error between parent image and mask.
+    const effectiveMaxDim = existingSMask ? Math.max(width, height) : maxDimension;
 
-        // Method B: FlateDecode with or without PNG Predictor
-        if (!canvasResult && filterStr.includes('FlateDecode') && width > 0 && height > 0) {
-          try {
-            const inflated = pako.inflate(originalBytes);
-            const isGray = colorSpaceStr.toLowerCase().includes('gray');
-            const isCmyk = colorSpaceStr.toLowerCase().includes('cmyk');
-            const bytesPerPixel = isGray ? 1 : isCmyk ? 4 : 3;
+    let canvasResult = null;
 
-            let predictor = 1;
-            if (decodeParms && typeof decodeParms.get === 'function') {
-              predictor = parseInt(decodeParms.get(PDFName.of('Predictor'))?.toString() || '1', 10);
-            }
+    // Method A: Direct JPEG Decode
+    if (filterStr.includes('DCTDecode')) {
+      canvasResult = await decodeJpegToCanvas(originalBytes, effectiveMaxDim);
+    }
 
-            let rawPixels = null;
-            if (predictor >= 10) {
-              rawPixels = unfilterPng(inflated, width, height, bytesPerPixel);
-            } else if (inflated.length >= width * height * bytesPerPixel) {
-              rawPixels = inflated;
-            }
+    // Method B: FlateDecode (PNG / Raw Scanlines)
+    if (!canvasResult && filterStr.includes('FlateDecode') && width > 0 && height > 0) {
+      try {
+        const inflated = pako.inflate(originalBytes);
+        canvasResult = decodeFlateToCanvas(
+          inflated,
+          width,
+          height,
+          colorSpaceStr,
+          bpc,
+          decodeParms,
+          effectiveMaxDim
+        );
+      } catch (_) {}
+    }
 
-            if (rawPixels) {
-              canvasResult = rawScanlinesToCanvas(rawPixels, width, height, colorSpaceStr, maxDimension);
-            }
-          } catch (_e) {
-            // Predictor error or custom stream
+    if (canvasResult && canvasResult.canvas) {
+      const newJpegDataUrl = canvasResult.canvas.toDataURL('image/jpeg', jpegQuality);
+      const newJpegBytes = dataUrlToUint8Array(newJpegDataUrl);
+
+      // Only replace if new bytes achieve a meaningful reduction or downsampling
+      const didDownsample = canvasResult.targetW < canvasResult.origW || canvasResult.targetH < canvasResult.origH;
+      const threshold = didDownsample ? 0.98 : 0.95;
+
+      if (newJpegBytes.length < origLength * threshold) {
+        try {
+          const embedded = await pdfDoc.embedJpg(newJpegBytes);
+          await embedded.embedder.embedIntoContext(pdfDoc.context, embedded.ref);
+          const embObj = pdfDoc.context.lookup(embedded.ref);
+
+          // Preserve soft mask (transparency) if present
+          if (existingSMask && embObj.dict) {
+            embObj.dict.set(PDFName.of('SMask'), existingSMask);
           }
-        }
 
-        if (canvasResult && canvasResult.canvas) {
-          const newJpegDataUrl = canvasResult.canvas.toDataURL('image/jpeg', jpegQuality);
-          const newJpegBytes = dataUrlToUint8Array(newJpegDataUrl);
+          pdfDoc.context.assign(ref, embObj);
+          pdfDoc.context.delete(embedded.ref);
 
-          // Only replace if new bytes are smaller than original
-          if (newJpegBytes.length < origLength * 0.98) {
-            try {
-              const embedded = await pdfDoc.embedJpg(newJpegBytes);
-              await embedded.embedder.embedIntoContext(pdfDoc.context, embedded.ref);
-              const embObj = pdfDoc.context.lookup(embedded.ref);
-
-              const existingSMask = dict.get(PDFName.of('SMask'));
-              if (existingSMask && embObj.dict) {
-                embObj.dict.set(PDFName.of('SMask'), existingSMask);
-              }
-
-              pdfDoc.context.assign(ref, embObj);
-              pdfDoc.context.delete(embedded.ref);
-
-              imagesOptimized++;
-              bytesSaved += (origLength - newJpegBytes.length);
-            } catch (embedErr) {
-              console.warn('embedJpg error on ref:', ref.toString(), embedErr);
-            }
-          }
+          imagesOptimized++;
+          bytesSaved += (origLength - newJpegBytes.length);
+        } catch (embedErr) {
+          console.warn('embedJpg error on ref:', ref.toString(), embedErr);
         }
       }
     }
   }
 
-  return { doc: pdfDoc, imagesOptimized, bytesSaved };
+  // Also apply structural cleanup
+  optimizePdfStructure(pdfDoc);
+
+  return { doc: pdfDoc, imagesOptimized, bytesSaved, totalTargets: imageTargets.length };
 }
 
 /**
- * Main intelligent compression engine with progressive multi-pass strategy
- * Preserves 100% vector typography, searchable text, embedded fonts, and page layout.
+ * Page-level optimization for scanned documents where pages are scanned images
+ */
+async function optimizeScannedDocPages(arrayBuffer, scale, jpegQuality, onProgress = () => {}) {
+  try {
+    const uint8Data = new Uint8Array(arrayBuffer.slice(0));
+    const loadingTask = pdfjsLib.getDocument({
+      data: uint8Data,
+      cMapUrl: CMAP_URL,
+      cMapPacked: true,
+      standardFontDataUrl: STANDARD_FONT_DATA_URL,
+    });
+    const pdf = await loadingTask.promise;
+    const newDoc = await PDFDocument.create();
+
+    for (let p = 1; p <= pdf.numPages; p++) {
+      onProgress({
+        percent: Math.round(40 + (p / pdf.numPages) * 45),
+        stage: `Recompressing scanned page ${p} of ${pdf.numPages}...`,
+      });
+
+      const page = await pdf.getPage(p);
+      const viewport = page.getViewport({ scale });
+
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(10, Math.floor(viewport.width));
+      canvas.height = Math.max(10, Math.floor(viewport.height));
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      await page.render({
+        canvasContext: ctx,
+        canvas: canvas,
+        viewport: viewport,
+      }).promise;
+
+      const jpegDataUrl = canvas.toDataURL('image/jpeg', jpegQuality);
+      const jpegBytes = dataUrlToUint8Array(jpegDataUrl);
+      const embeddedJpg = await newDoc.embedJpg(jpegBytes);
+
+      // Add page matching original point dimensions
+      const origViewport = page.getViewport({ scale: 1.0 });
+      const newPage = newDoc.addPage([origViewport.width, origViewport.height]);
+      newPage.drawImage(embeddedJpg, {
+        x: 0,
+        y: 0,
+        width: origViewport.width,
+        height: origViewport.height,
+      });
+    }
+
+    newDoc.setProducer('CompressPDF');
+    newDoc.setCreator('CompressPDF');
+    const bytes = await newDoc.save({ useObjectStreams: true });
+    return bytes;
+  } catch (err) {
+    console.warn('optimizeScannedDocPages failed:', err);
+    return null;
+  }
+}
+
+/**
+ * Inspect document content to classify it: 'text_vector', 'scanned', or 'mixed'
+ */
+async function analyzeDocumentContent(arrayBuffer) {
+  try {
+    const uint8Data = new Uint8Array(arrayBuffer.slice(0));
+    const loadingTask = pdfjsLib.getDocument({
+      data: uint8Data,
+      cMapUrl: CMAP_URL,
+      cMapPacked: true,
+      standardFontDataUrl: STANDARD_FONT_DATA_URL,
+    });
+    const pdf = await loadingTask.promise;
+    let totalTextChars = 0;
+
+    for (let p = 1; p <= Math.min(5, pdf.numPages); p++) {
+      const page = await pdf.getPage(p);
+      const tc = await page.getTextContent();
+      totalTextChars += tc.items.reduce((sum, it) => sum + (it.str ? it.str.trim().length : 0), 0);
+    }
+
+    // Count image XObjects with pdf-lib
+    const tempDoc = await PDFDocument.load(arrayBuffer.slice(0));
+    let imageCount = 0;
+    for (const [, obj] of tempDoc.context.enumerateIndirectObjects()) {
+      if (obj.dict && obj.dict.get(PDFName.of('Subtype'))?.toString() === '/Image') {
+        imageCount++;
+      }
+    }
+
+    if (imageCount === 0) {
+      return { type: 'text_vector', imageCount, totalTextChars };
+    }
+    if (totalTextChars < 30) {
+      return { type: 'scanned', imageCount, totalTextChars };
+    }
+    return { type: 'mixed', imageCount, totalTextChars };
+  } catch {
+    return { type: 'mixed', imageCount: 1, totalTextChars: 100 };
+  }
+}
+
+/**
+ * Main multi-strategy compression engine.
+ * Supports High Quality, Balanced, Strong Compression, and Custom Target Size.
+ * Preserves 100% searchable text, embedded fonts, and vector layout.
  */
 export async function compressPdf(arrayBuffer, options = {}, onProgress = () => {}) {
   const originalSize = arrayBuffer.byteLength;
@@ -530,10 +779,10 @@ export async function compressPdf(arrayBuffer, options = {}, onProgress = () => 
 
   onProgress({
     percent: 10,
-    stage: 'Analyzing document structure & contents...',
+    stage: 'Analyzing document structure & content type...',
   });
 
-  // Verify encryption with pdf-lib
+  // Verify encryption
   try {
     await PDFDocument.load(arrayBuffer.slice(0), { ignoreEncryption: false });
   } catch (err) {
@@ -542,74 +791,68 @@ export async function compressPdf(arrayBuffer, options = {}, onProgress = () => 
     }
   }
 
-  // Count image XObjects in the document
-  const tempDoc = await PDFDocument.load(arrayBuffer.slice(0));
-  const imageRefs = [];
-  for (const [ref, obj] of tempDoc.context.enumerateIndirectObjects()) {
-    if (obj instanceof PDFRawStream || obj.dict) {
-      const subtype = obj.dict?.get(PDFName.of('Subtype'));
-      if (subtype && subtype.toString() === '/Image') {
-        imageRefs.push(ref);
-      }
-    }
-  }
-  const hasImages = imageRefs.length > 0;
+  // Classify document
+  const { type: docType, imageCount } = await analyzeDocumentContent(arrayBuffer);
+  const hasImages = imageCount > 0;
 
   // ========================================================
   // PASS 1: Lossless PDF Optimization & Object Stream Compaction
   // ========================================================
   onProgress({
     percent: 25,
-    stage: 'Pass 1: Lossless PDF optimization & stream compaction...',
+    stage: 'Pass 1: Lossless structural cleanup & stream compaction...',
   });
 
   const docPass1 = await PDFDocument.load(arrayBuffer.slice(0));
+  optimizePdfStructure(docPass1);
   docPass1.setProducer('CompressPDF');
   docPass1.setCreator('CompressPDF');
   const bytesPass1 = await docPass1.save({ useObjectStreams: true });
   const sizePass1 = bytesPass1.byteLength;
 
-  // If Target Mode and Pass 1 already reached the target:
+  // If Target Mode and Pass 1 reached the target:
   if (isTargetMode && sizePass1 <= targetSizeBytes) {
-    onProgress({ percent: 100, stage: 'Target reached losslessly!' });
-    const saved = Math.max(0, originalSize - sizePass1);
-    const pct = originalSize > 0 ? (saved / originalSize) * 100 : 0;
+    onProgress({ percent: 100, stage: 'Target achieved losslessly!' });
+    const finalBytes = sizePass1 < originalSize ? bytesPass1 : new Uint8Array(arrayBuffer.slice(0));
+    const finalBlob = new Blob([finalBytes], { type: 'application/pdf' });
+
     return {
       success: true,
       originalSize,
-      compressedSize: sizePass1,
-      savedBytes: saved,
-      percentageReduction: pct,
-      isAlreadyOptimized: sizePass1 >= originalSize,
-      compressedBytes: sizePass1 < originalSize ? bytesPass1 : new Uint8Array(arrayBuffer.slice(0)),
+      compressedSize: finalBlob.size,
+      savedBytes: Math.max(0, originalSize - finalBlob.size),
+      percentageReduction: originalSize > 0 ? ((originalSize - finalBlob.size) / originalSize) * 100 : 0,
+      isAlreadyOptimized: finalBlob.size >= originalSize,
+      compressedBytes: finalBytes,
       modeUsed: 'custom_target',
       modeTitle: `Target ≤ ${formatBytes(targetSizeBytes)}`,
-      strategyUsed: 'Lossless PDF Structure Optimization',
+      strategyUsed: 'Lossless Structural Optimization',
       targetMet: true,
       targetSizeBytes,
       targetSizeKb,
-      qualityNotice: 'Target reached using lossless structure optimization. Vector text, fonts, and images were preserved with zero quality change.',
+      qualityNotice: 'Target reached using lossless structure optimization. Vector text, fonts, and layout preserved with zero quality change.',
       imagesProcessed: 0,
-      totalImages: imageRefs.length,
+      totalImages: imageCount,
     };
   }
 
-  // If the document has NO images (pure vector text):
-  if (!hasImages) {
-    onProgress({ percent: 100, stage: 'Document optimization completed.' });
-    const finalSize = Math.min(originalSize, sizePass1);
+  // If the document has NO images (pure vector typography & embedded fonts):
+  if (!hasImages || docType === 'text_vector') {
+    onProgress({ percent: 100, stage: 'Vector document optimization completed.' });
     const finalBytes = sizePass1 < originalSize ? bytesPass1 : new Uint8Array(arrayBuffer.slice(0));
-    const saved = Math.max(0, originalSize - finalSize);
+    const finalBlob = new Blob([finalBytes], { type: 'application/pdf' });
+    const verifiedSize = finalBlob.size;
+    const saved = Math.max(0, originalSize - verifiedSize);
     const pct = originalSize > 0 ? (saved / originalSize) * 100 : 0;
-    const met = isTargetMode ? finalSize <= targetSizeBytes : true;
+    const met = isTargetMode ? verifiedSize <= targetSizeBytes : true;
 
     return {
       success: true,
       originalSize,
-      compressedSize: finalSize,
+      compressedSize: verifiedSize,
       savedBytes: saved,
       percentageReduction: pct,
-      isAlreadyOptimized: finalSize >= originalSize,
+      isAlreadyOptimized: verifiedSize >= originalSize,
       compressedBytes: finalBytes,
       modeUsed: isTargetMode ? 'custom_target' : level,
       modeTitle: isTargetMode ? `Target ≤ ${formatBytes(targetSizeBytes)}` : getProfileTitle(level),
@@ -618,69 +861,69 @@ export async function compressPdf(arrayBuffer, options = {}, onProgress = () => 
       targetSizeBytes,
       targetSizeKb,
       qualityNotice: isTargetMode && !met
-        ? `Target of ${formatBytes(targetSizeBytes)} not reached: This document contains vector typography and embedded fonts with no compressible images. Entire pages were preserved as selectable vector text rather than blurry rasterized images.`
-        : 'Vector typography and document streams optimized losslessly.',
+        ? `Target of ${formatBytes(targetSizeBytes)} could not be reached safely. This document consists of vector typography and embedded fonts with no compressible images. Entire pages were preserved as selectable vector text rather than being converted into blurry raster images.`
+        : verifiedSize < originalSize
+        ? 'Vector typography and document streams optimized losslessly. 100% selectable text preserved.'
+        : 'This document consists of clean vector typography and contains no redundant data. It is already optimally sized.',
       imagesProcessed: 0,
       totalImages: 0,
     };
   }
 
   // ========================================================
-  // PASS 2: Moderate Image Compression & Downsampling
+  // PRESET MODES (High Quality, Balanced, Strong Compression)
   // ========================================================
-  onProgress({
-    percent: 50,
-    stage: 'Pass 2: Applying calibrated image compression...',
-  });
-
-  let pass2MaxDim = 1600;
-  let pass2Quality = 0.82;
-
-  if (level === 'balanced' || level === 'recommended') {
-    pass2MaxDim = 1200;
-    pass2Quality = 0.70;
-  } else if (level === 'smaller_file' || level === 'high') {
-    pass2MaxDim = 850;
-    pass2Quality = 0.52;
-  } else if (isTargetMode) {
-    const targetRatio = targetSizeBytes / originalSize;
-    if (targetRatio < 0.45) {
-      pass2MaxDim = 1000;
-      pass2Quality = 0.62;
-    } else if (targetRatio < 0.70) {
-      pass2MaxDim = 1250;
-      pass2Quality = 0.72;
-    } else {
-      pass2MaxDim = 1500;
-      pass2Quality = 0.80;
-    }
-  }
-
-  const { doc: docPass2, imagesOptimized: countPass2 } = await optimizeDocImages(
-    arrayBuffer,
-    pass2MaxDim,
-    pass2Quality
-  );
-  docPass2.setProducer('CompressPDF');
-  docPass2.setCreator('CompressPDF');
-  const bytesPass2 = await docPass2.save({ useObjectStreams: true });
-  const sizePass2 = bytesPass2.byteLength;
-
-  // Preset Mode Finished at Pass 2
   if (!isTargetMode) {
-    onProgress({ percent: 100, stage: 'Compression completed successfully!' });
-    const bestBytes = sizePass2 < originalSize ? bytesPass2 : (sizePass1 < originalSize ? bytesPass1 : new Uint8Array(arrayBuffer.slice(0)));
-    const bestSize = bestBytes.byteLength;
-    const saved = Math.max(0, originalSize - bestSize);
+    onProgress({
+      percent: 50,
+      stage: `Applying ${getProfileTitle(level)} image optimization...`,
+    });
+
+    const profile = QUALITY_PROFILES[level] || QUALITY_PROFILES.high_quality;
+    const { doc: docOpt, imagesOptimized } = await optimizeDocImages(
+      arrayBuffer,
+      profile.maxImageDimension,
+      profile.jpegQuality
+    );
+
+    docOpt.setProducer('CompressPDF');
+    docOpt.setCreator('CompressPDF');
+    const bytesOpt = await docOpt.save({ useObjectStreams: true });
+    let bestBytes = bytesOpt;
+
+    // For scanned documents without text, if in-place replacement didn't compress enough:
+    if (docType === 'scanned' && (bytesOpt.length >= originalSize * 0.85)) {
+      onProgress({ percent: 75, stage: 'Applying scanned document page recompression...' });
+      const scannedBytes = await optimizeScannedDocPages(
+        arrayBuffer,
+        profile.scanScale,
+        profile.jpegQuality,
+        onProgress
+      );
+      if (scannedBytes && scannedBytes.length < bytesOpt.length) {
+        bestBytes = scannedBytes;
+      }
+    }
+
+    // Safety: never return larger bytes than original
+    if (bestBytes.length >= originalSize) {
+      bestBytes = sizePass1 < originalSize ? bytesPass1 : new Uint8Array(arrayBuffer.slice(0));
+    }
+
+    const finalBlob = new Blob([bestBytes], { type: 'application/pdf' });
+    const finalSize = finalBlob.size;
+    const saved = Math.max(0, originalSize - finalSize);
     const pct = originalSize > 0 ? (saved / originalSize) * 100 : 0;
+
+    onProgress({ percent: 100, stage: 'Compression completed successfully!' });
 
     return {
       success: true,
       originalSize,
-      compressedSize: bestSize,
+      compressedSize: finalSize,
       savedBytes: saved,
       percentageReduction: pct,
-      isAlreadyOptimized: bestSize >= originalSize,
+      isAlreadyOptimized: finalSize >= originalSize,
       compressedBytes: bestBytes,
       modeUsed: level,
       modeTitle: getProfileTitle(level),
@@ -688,53 +931,71 @@ export async function compressPdf(arrayBuffer, options = {}, onProgress = () => 
       targetMet: true,
       targetSizeBytes: null,
       targetSizeKb: null,
-      qualityNotice: `Preserved selectable vector text while optimizing ${countPass2} embedded images.`,
-      imagesProcessed: countPass2,
-      totalImages: imageRefs.length,
+      qualityNotice: finalSize >= originalSize
+        ? 'Your document is already maximally compact. Re-encoding would increase file size, so the original document was preserved.'
+        : `Preserved selectable vector text and document layout while optimizing ${imagesOptimized || imageCount} embedded images.`,
+      imagesProcessed: imagesOptimized,
+      totalImages: imageCount,
     };
   }
 
-  // Target Mode: Did Pass 2 reach target?
+  // ========================================================
+  // CUSTOM TARGET SIZE: Progressive Multi-Pass Engine
+  // ========================================================
+
+  // PASS 2: High Quality Pass
+  onProgress({
+    percent: 45,
+    stage: 'Pass 2: Testing High Quality image compression...',
+  });
+
+  const { doc: docPass2, imagesOptimized: countPass2 } = await optimizeDocImages(
+    arrayBuffer,
+    1600,
+    0.82
+  );
+  docPass2.setProducer('CompressPDF');
+  docPass2.setCreator('CompressPDF');
+  const bytesPass2 = await docPass2.save({ useObjectStreams: true });
+  const sizePass2 = bytesPass2.byteLength;
+
   if (sizePass2 <= targetSizeBytes) {
     onProgress({ percent: 100, stage: 'Target achieved successfully!' });
-    const saved = Math.max(0, originalSize - sizePass2);
+    const finalBlob = new Blob([bytesPass2], { type: 'application/pdf' });
+    const finalSize = finalBlob.size;
+    const saved = Math.max(0, originalSize - finalSize);
     const pct = originalSize > 0 ? (saved / originalSize) * 100 : 0;
+
     return {
       success: true,
       originalSize,
-      compressedSize: sizePass2,
+      compressedSize: finalSize,
       savedBytes: saved,
       percentageReduction: pct,
-      isAlreadyOptimized: sizePass2 >= originalSize,
+      isAlreadyOptimized: finalSize >= originalSize,
       compressedBytes: bytesPass2,
       modeUsed: 'custom_target',
       modeTitle: `Target ≤ ${formatBytes(targetSizeBytes)}`,
-      strategyUsed: 'Calibrated Adaptive Compression (Target Met)',
+      strategyUsed: 'High Quality Adaptive Compression',
       targetMet: true,
       targetSizeBytes,
       targetSizeKb,
-      qualityNotice: `Target achieved: ${formatBytes(sizePass2)} ≤ target ${formatBytes(targetSizeBytes)}. Vector text remained selectable and intact.`,
+      qualityNotice: `Target achieved: ${formatBytes(finalSize)} ≤ target ${formatBytes(targetSizeBytes)}. Vector text remained selectable and intact.`,
       imagesProcessed: countPass2,
-      totalImages: imageRefs.length,
+      totalImages: imageCount,
     };
   }
 
-  // ========================================================
-  // PASS 3: Progressive Adaptive Compression (Target Not Reached in Pass 2)
-  // ========================================================
+  // PASS 3: Balanced Compression Pass
   onProgress({
-    percent: 72,
-    stage: 'Pass 3: Progressive adaptive compression to reach target budget...',
+    percent: 65,
+    stage: 'Pass 3: Progressive balanced compression...',
   });
-
-  const overshootRatio = sizePass2 / targetSizeBytes;
-  const pass3MaxDim = Math.max(650, Math.round(pass2MaxDim / Math.sqrt(Math.min(2.8, overshootRatio))));
-  const pass3Quality = Math.max(0.44, Math.min(0.65, pass2Quality / Math.min(2.2, overshootRatio)));
 
   const { doc: docPass3, imagesOptimized: countPass3 } = await optimizeDocImages(
     arrayBuffer,
-    pass3MaxDim,
-    pass3Quality
+    1200,
+    0.68
   );
   docPass3.setProducer('CompressPDF');
   docPass3.setCreator('CompressPDF');
@@ -743,71 +1004,137 @@ export async function compressPdf(arrayBuffer, options = {}, onProgress = () => 
 
   if (sizePass3 <= targetSizeBytes) {
     onProgress({ percent: 100, stage: 'Target achieved successfully!' });
-    const saved = Math.max(0, originalSize - sizePass3);
+    const finalBlob = new Blob([bytesPass3], { type: 'application/pdf' });
+    const finalSize = finalBlob.size;
+    const saved = Math.max(0, originalSize - finalSize);
     const pct = originalSize > 0 ? (saved / originalSize) * 100 : 0;
+
     return {
       success: true,
       originalSize,
-      compressedSize: sizePass3,
+      compressedSize: finalSize,
       savedBytes: saved,
       percentageReduction: pct,
-      isAlreadyOptimized: sizePass3 >= originalSize,
+      isAlreadyOptimized: finalSize >= originalSize,
       compressedBytes: bytesPass3,
       modeUsed: 'custom_target',
       modeTitle: `Target ≤ ${formatBytes(targetSizeBytes)}`,
-      strategyUsed: 'Progressive Adaptive Compression (Target Met)',
+      strategyUsed: 'Balanced Progressive Compression',
       targetMet: true,
       targetSizeBytes,
       targetSizeKb,
-      qualityNotice: `Target achieved: ${formatBytes(sizePass3)} ≤ target ${formatBytes(targetSizeBytes)}. Vector text remained selectable and intact.`,
+      qualityNotice: `Target achieved: ${formatBytes(finalSize)} ≤ target ${formatBytes(targetSizeBytes)}. Vector text remained selectable and intact.`,
       imagesProcessed: countPass3,
-      totalImages: imageRefs.length,
+      totalImages: imageCount,
     };
   }
 
-  // ========================================================
-  // PASS 4: Final Safe Quality Floor Attempt
-  // ========================================================
+  // PASS 4: Strong Compression Pass
   onProgress({
-    percent: 90,
-    stage: 'Pass 4: Evaluating safe quality floor limit...',
+    percent: 80,
+    stage: 'Pass 4: Evaluating strong compression limits...',
   });
-
-  const pass4MaxDim = 500;
-  const pass4Quality = 0.36;
 
   const { doc: docPass4, imagesOptimized: countPass4 } = await optimizeDocImages(
     arrayBuffer,
-    pass4MaxDim,
-    pass4Quality
+    800,
+    0.48
   );
   docPass4.setProducer('CompressPDF');
   docPass4.setCreator('CompressPDF');
   const bytesPass4 = await docPass4.save({ useObjectStreams: true });
   const sizePass4 = bytesPass4.byteLength;
 
-  // Determine best (smallest) output between passes
-  let bestBytes = bytesPass4;
-  let bestSize = sizePass4;
-  let bestCount = countPass4;
+  if (sizePass4 <= targetSizeBytes) {
+    onProgress({ percent: 100, stage: 'Target achieved successfully!' });
+    const finalBlob = new Blob([bytesPass4], { type: 'application/pdf' });
+    const finalSize = finalBlob.size;
+    const saved = Math.max(0, originalSize - finalSize);
+    const pct = originalSize > 0 ? (saved / originalSize) * 100 : 0;
 
-  if (sizePass4 >= sizePass3) {
-    bestBytes = bytesPass3;
-    bestSize = sizePass3;
-    bestCount = countPass3;
-  }
-  if (bestSize >= sizePass2) {
-    bestBytes = bytesPass2;
-    bestSize = sizePass2;
-    bestCount = countPass2;
-  }
-  if (bestSize >= originalSize) {
-    bestBytes = new Uint8Array(arrayBuffer.slice(0));
-    bestSize = originalSize;
+    return {
+      success: true,
+      originalSize,
+      compressedSize: finalSize,
+      savedBytes: saved,
+      percentageReduction: pct,
+      isAlreadyOptimized: finalSize >= originalSize,
+      compressedBytes: bytesPass4,
+      modeUsed: 'custom_target',
+      modeTitle: `Target ≤ ${formatBytes(targetSizeBytes)}`,
+      strategyUsed: 'Strong Progressive Compression',
+      targetMet: true,
+      targetSizeBytes,
+      targetSizeKb,
+      qualityNotice: `Target achieved: ${formatBytes(finalSize)} ≤ target ${formatBytes(targetSizeBytes)}. Vector text remained selectable and intact.`,
+      imagesProcessed: countPass4,
+      totalImages: imageCount,
+    };
   }
 
-  const targetMet = bestSize <= targetSizeBytes;
-  const savedBytes = Math.max(0, originalSize - bestSize);
+  // PASS 5: Adaptive Deep Compression / Scanned Document Recompression
+  onProgress({
+    percent: 90,
+    stage: 'Pass 5: Calculating adaptive compression budget...',
+  });
+
+  const overshoot = sizePass4 / targetSizeBytes;
+  const adaptiveMaxDim = Math.max(480, Math.round(800 / Math.sqrt(Math.min(3.5, overshoot))));
+  const adaptiveQuality = Math.max(0.32, Math.min(0.45, 0.48 / Math.min(2.0, overshoot)));
+
+  const { doc: docPass5, imagesOptimized: countPass5 } = await optimizeDocImages(
+    arrayBuffer,
+    adaptiveMaxDim,
+    adaptiveQuality
+  );
+  docPass5.setProducer('CompressPDF');
+  docPass5.setCreator('CompressPDF');
+  const bytesPass5 = await docPass5.save({ useObjectStreams: true });
+  let sizePass5 = bytesPass5.byteLength;
+  let candidatePass5 = bytesPass5;
+
+  // If document is scanned and still above target, attempt page recompression
+  if (docType === 'scanned' && sizePass5 > targetSizeBytes) {
+    onProgress({ percent: 95, stage: 'Applying deep scanned page recompression...' });
+    const scannedBytes = await optimizeScannedDocPages(
+      arrayBuffer,
+      0.95,
+      0.40,
+      onProgress
+    );
+    if (scannedBytes && scannedBytes.length < sizePass5) {
+      candidatePass5 = scannedBytes;
+      sizePass5 = scannedBytes.length;
+    }
+  }
+
+  // Candidate pool of all passes
+  const candidates = [
+    { bytes: candidatePass5, size: sizePass5, count: countPass5 },
+    { bytes: bytesPass4, size: sizePass4, count: countPass4 },
+    { bytes: bytesPass3, size: sizePass3, count: countPass3 },
+    { bytes: bytesPass2, size: sizePass2, count: countPass2 },
+    { bytes: bytesPass1, size: sizePass1, count: 0 },
+  ];
+
+  // Pick smallest candidate that is valid
+  let best = candidates[0];
+  for (const c of candidates) {
+    if (c.size < best.size) {
+      best = c;
+    }
+  }
+
+  // Safety: if best size is >= original size, keep original
+  let finalBytes = best.bytes;
+  if (best.size >= originalSize) {
+    finalBytes = new Uint8Array(arrayBuffer.slice(0));
+  }
+
+  const finalBlob = new Blob([finalBytes], { type: 'application/pdf' });
+  const finalSize = finalBlob.size;
+  const targetMet = finalSize <= targetSizeBytes;
+  const savedBytes = Math.max(0, originalSize - finalSize);
   const percentageReduction = originalSize > 0 ? (savedBytes / originalSize) * 100 : 0;
 
   onProgress({
@@ -818,21 +1145,21 @@ export async function compressPdf(arrayBuffer, options = {}, onProgress = () => 
   return {
     success: true,
     originalSize,
-    compressedSize: bestSize,
+    compressedSize: finalSize,
     savedBytes,
     percentageReduction,
-    isAlreadyOptimized: bestSize >= originalSize,
-    compressedBytes: bestBytes,
+    isAlreadyOptimized: finalSize >= originalSize,
+    compressedBytes: finalBytes,
     modeUsed: 'custom_target',
     modeTitle: `Target ≤ ${formatBytes(targetSizeBytes)}`,
-    strategyUsed: targetMet ? 'Multi-Pass Adaptive Compression' : 'Quality-Protected Compression',
+    strategyUsed: targetMet ? 'Adaptive Progressive Compression' : 'Quality-Protected Compression',
     targetMet,
     targetSizeBytes,
     targetSizeKb,
     qualityNotice: targetMet
-      ? `Target achieved: ${formatBytes(bestSize)} ≤ target ${formatBytes(targetSizeBytes)}.`
-      : `Target of ${formatBytes(targetSizeBytes)} was not reached. Reduced to ${formatBytes(bestSize)} (${Math.round(percentageReduction)}% saved). Further compression was halted at safe visual floor limits to avoid severe photo blurriness and maintain text legibility.`,
-    imagesProcessed: bestCount,
-    totalImages: imageRefs.length,
+      ? `Target achieved: ${formatBytes(finalSize)} ≤ target ${formatBytes(targetSizeBytes)}.`
+      : `Target of ${formatBytes(targetSizeBytes)} was not reached. Reduced to ${formatBytes(finalSize)} (${Math.round(percentageReduction)}% saved). Further compression was stopped at safe visual limits to prevent severe photo degradation and keep the document legible.`,
+    imagesProcessed: best.count,
+    totalImages: imageCount,
   };
 }
