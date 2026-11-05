@@ -557,6 +557,14 @@ function optimizePdfStructure(pdfDoc) {
 }
 
 /**
+ * Helper to safely resolve direct values or indirect references from PDF context
+ */
+function lookupValue(context, entry) {
+  if (!entry) return null;
+  return typeof context.lookup === 'function' ? context.lookup(entry) : entry;
+}
+
+/**
  * Optimize all image indirect objects in a cloned PDFDocument using given settings.
  * Preserves 100% vector typography and layout by replacing image streams in-place.
  */
@@ -569,8 +577,8 @@ async function optimizeDocImages(arrayBuffer, maxDimension, jpegQuality) {
   const imageTargets = [];
   for (const [ref, obj] of pdfDoc.context.enumerateIndirectObjects()) {
     if (obj instanceof PDFRawStream || obj.dict) {
-      const subtype = obj.dict?.get(PDFName.of('Subtype'));
-      if (subtype && subtype.toString() === '/Image') {
+      const subtypeObj = lookupValue(pdfDoc.context, obj.dict?.get(PDFName.of('Subtype')));
+      if (subtypeObj && subtypeObj.toString() === '/Image') {
         imageTargets.push({ ref, obj });
       }
     }
@@ -579,12 +587,35 @@ async function optimizeDocImages(arrayBuffer, maxDimension, jpegQuality) {
   for (const target of imageTargets) {
     const { ref, obj } = target;
     const dict = obj.dict;
-    const width = parseInt(dict.get(PDFName.of('Width'))?.toString() || '0', 10);
-    const height = parseInt(dict.get(PDFName.of('Height'))?.toString() || '0', 10);
-    const filterStr = dict.get(PDFName.of('Filter'))?.toString() || '';
-    const colorSpaceStr = dict.get(PDFName.of('ColorSpace'))?.toString() || '/DeviceRGB';
-    const bpc = parseInt(dict.get(PDFName.of('BitsPerComponent'))?.toString() || '8', 10);
-    const decodeParms = dict.get(PDFName.of('DecodeParms'));
+    const widthObj = lookupValue(pdfDoc.context, dict.get(PDFName.of('Width')));
+    const heightObj = lookupValue(pdfDoc.context, dict.get(PDFName.of('Height')));
+    const width = widthObj && typeof widthObj.asNumber === 'function' ? widthObj.asNumber() : parseInt(widthObj?.toString() || '0', 10);
+    const height = heightObj && typeof heightObj.asNumber === 'function' ? heightObj.asNumber() : parseInt(heightObj?.toString() || '0', 10);
+
+    const filterRaw = lookupValue(pdfDoc.context, dict.get(PDFName.of('Filter')));
+    let filterStr = '';
+    if (filterRaw) {
+      if (typeof filterRaw.asArray === 'function') {
+        filterStr = filterRaw.asArray().map(f => lookupValue(pdfDoc.context, f)?.toString() || '').join(' ');
+      } else {
+        filterStr = filterRaw.toString();
+      }
+    }
+
+    const colorSpaceRaw = lookupValue(pdfDoc.context, dict.get(PDFName.of('ColorSpace')));
+    let colorSpaceStr = '/DeviceRGB';
+    if (colorSpaceRaw) {
+      if (typeof colorSpaceRaw.asArray === 'function') {
+        colorSpaceStr = colorSpaceRaw.asArray().map(c => lookupValue(pdfDoc.context, c)?.toString() || '').join(' ');
+      } else {
+        colorSpaceStr = colorSpaceRaw.toString();
+      }
+    }
+
+    const bpcObj = lookupValue(pdfDoc.context, dict.get(PDFName.of('BitsPerComponent')));
+    const bpc = bpcObj && typeof bpcObj.asNumber === 'function' ? bpcObj.asNumber() : parseInt(bpcObj?.toString() || '8', 10);
+
+    const decodeParms = lookupValue(pdfDoc.context, dict.get(PDFName.of('DecodeParms')));
     const existingSMask = dict.get(PDFName.of('SMask'));
     const originalBytes = obj.getContents();
     const origLength = originalBytes ? originalBytes.length : 0;
@@ -601,12 +632,12 @@ async function optimizeDocImages(arrayBuffer, maxDimension, jpegQuality) {
     let canvasResult = null;
 
     // Method A: Direct JPEG Decode
-    if (filterStr.includes('DCTDecode')) {
+    if (filterStr.includes('DCTDecode') || filterStr.includes('/DCT')) {
       canvasResult = await decodeJpegToCanvas(originalBytes, effectiveMaxDim);
     }
 
     // Method B: FlateDecode (PNG / Raw Scanlines)
-    if (!canvasResult && filterStr.includes('FlateDecode') && width > 0 && height > 0) {
+    if (!canvasResult && (filterStr.includes('FlateDecode') || filterStr.includes('/Fl')) && width > 0 && height > 0) {
       try {
         const inflated = pako.inflate(originalBytes);
         canvasResult = decodeFlateToCanvas(
@@ -621,13 +652,28 @@ async function optimizeDocImages(arrayBuffer, maxDimension, jpegQuality) {
       } catch (_) {}
     }
 
+    // Method C: Raw uncompressed bitmap stream (no filter)
+    if (!canvasResult && (!filterStr || filterStr === 'null' || filterStr === 'undefined') && width > 0 && height > 0) {
+      try {
+        canvasResult = decodeFlateToCanvas(
+          originalBytes,
+          width,
+          height,
+          colorSpaceStr,
+          bpc,
+          decodeParms,
+          effectiveMaxDim
+        );
+      } catch (_) {}
+    }
+
     if (canvasResult && canvasResult.canvas) {
       const newJpegDataUrl = canvasResult.canvas.toDataURL('image/jpeg', jpegQuality);
       const newJpegBytes = dataUrlToUint8Array(newJpegDataUrl);
 
-      // Only replace if new bytes achieve a reduction
+      // Accept any savings when downsampled; require 2% savings for same-size re-encode
       const didDownsample = canvasResult.targetW < canvasResult.origW || canvasResult.targetH < canvasResult.origH;
-      const threshold = didDownsample ? 0.99 : 0.96;
+      const threshold = didDownsample ? 1.00 : 0.98;
 
       if (newJpegBytes.length < origLength * threshold) {
         try {
@@ -760,6 +806,10 @@ async function optimizeVisualDocPages(arrayBuffer, targetSizeBytes = null, onPro
     // Conservative budget per page with 15% safety buffer
     const budgetPerPage = (targetDocBudget * 0.85) / numPages;
 
+    // Safe readability floors: never render so small that text becomes unreadable
+    const MIN_SAFE_SCALE = 0.70;
+    const MIN_SAFE_QUALITY = 0.30;
+
     let scale = 1.0;
     let jpegQuality = 0.55;
 
@@ -779,35 +829,47 @@ async function optimizeVisualDocPages(arrayBuffer, targetSizeBytes = null, onPro
     } else if (budgetPerPage >= 30000) {
       scale = 0.85;
       jpegQuality = 0.44;
-    } else if (budgetPerPage >= 18000) {
-      scale = 0.72;
-      jpegQuality = 0.36;
-    } else if (budgetPerPage >= 10000) {
-      scale = 0.62;
-      jpegQuality = 0.28;
     } else {
-      scale = Math.max(0.45, 0.55 * Math.sqrt(budgetPerPage / 10000));
-      jpegQuality = Math.max(0.18, Math.min(0.26, (budgetPerPage / 10000) * 0.28));
+      scale = Math.max(MIN_SAFE_SCALE, 0.80 * Math.sqrt(budgetPerPage / 30000));
+      jpegQuality = Math.max(MIN_SAFE_QUALITY, Math.min(0.40, (budgetPerPage / 30000) * 0.44));
     }
 
     // Pass 1: Render with initial calibrated settings
-    let bytes = await renderDocWithParams(scale, jpegQuality, 80, 14);
+    let bytes = await renderDocWithParams(scale, jpegQuality, 80, 10);
 
-    // Closed-loop verification:
-    // If target was specified and output exceeded targetSizeBytes, perform adaptive refinement!
+    // Closed-loop iterative refinement (respecting safe visual floor):
+    // If target was specified and output exceeded targetSizeBytes, perform up to 3 adaptive refinements
     if (targetSizeBytes && bytes.byteLength > targetSizeBytes) {
-      const reductionNeeded = Math.min(0.92, (targetSizeBytes / bytes.byteLength) * 0.92);
-      const refinedScale = Math.max(0.40, scale * Math.sqrt(reductionNeeded));
-      const refinedQuality = Math.max(0.16, jpegQuality * Math.pow(reductionNeeded, 0.5));
+      let currentScale = scale;
+      let currentQuality = jpegQuality;
+      const maxRefinements = 3;
 
-      onProgress({
-        percent: 95,
-        stage: `Refining page compression to guarantee exact target limit (scale: ${Math.round(refinedScale * 100)}%)...`,
-      });
+      for (let attempt = 0; attempt < maxRefinements && bytes.byteLength > targetSizeBytes; attempt++) {
+        const ratio = targetSizeBytes / bytes.byteLength;
+        // Scale down proportionally with safety margin
+        const adjustFactor = Math.min(0.92, ratio * 0.90);
+        const nextScale = Math.max(MIN_SAFE_SCALE, currentScale * Math.sqrt(adjustFactor));
+        const nextQuality = Math.max(MIN_SAFE_QUALITY, currentQuality * Math.pow(adjustFactor, 0.55));
 
-      const refinedBytes = await renderDocWithParams(refinedScale, refinedQuality, 95, 4);
-      if (refinedBytes.byteLength < bytes.byteLength) {
-        bytes = refinedBytes;
+        // If we've reached the safe readability floor, stop degrading quality
+        if (Math.abs(nextScale - currentScale) < 0.02 && Math.abs(nextQuality - currentQuality) < 0.02) {
+          break;
+        }
+
+        currentScale = nextScale;
+        currentQuality = nextQuality;
+
+        onProgress({
+          percent: 90 + attempt * 3,
+          stage: `Refinement ${attempt + 1}/${maxRefinements}: adjusting to hit target limit (scale: ${Math.round(currentScale * 100)}%, quality: ${Math.round(currentQuality * 100)}%)...`,
+        });
+
+        const refinedBytes = await renderDocWithParams(currentScale, currentQuality, 90 + attempt * 3, 3);
+        if (refinedBytes.byteLength < bytes.byteLength) {
+          bytes = refinedBytes;
+        } else {
+          break; // No further improvement possible
+        }
       }
     }
 
@@ -843,8 +905,11 @@ async function analyzeDocumentContent(arrayBuffer) {
     const tempDoc = await PDFDocument.load(arrayBuffer.slice(0));
     let imageCount = 0;
     for (const [, obj] of tempDoc.context.enumerateIndirectObjects()) {
-      if (obj.dict && obj.dict.get(PDFName.of('Subtype'))?.toString() === '/Image') {
-        imageCount++;
+      if (obj.dict) {
+        const subtypeObj = lookupValue(tempDoc.context, obj.dict.get(PDFName.of('Subtype')));
+        if (subtypeObj && subtypeObj.toString() === '/Image') {
+          imageCount++;
+        }
       }
     }
 
@@ -890,7 +955,7 @@ export async function compressPdf(arrayBuffer, options = {}, onProgress = () => 
   }
 
   // Classify document
-  const { imageCount } = await analyzeDocumentContent(arrayBuffer);
+  const { type: docType, imageCount } = await analyzeDocumentContent(arrayBuffer);
   const hasImages = imageCount > 0;
 
   // ========================================================
@@ -1046,6 +1111,7 @@ export async function compressPdf(arrayBuffer, options = {}, onProgress = () => 
 
       let bestBytes = bytesPass1;
       let count = 0;
+      let usedVisual = false;
 
       if (hasImages) {
         const { doc: docStrong, imagesOptimized } = await optimizeDocImages(arrayBuffer, 800, 0.48);
@@ -1058,12 +1124,15 @@ export async function compressPdf(arrayBuffer, options = {}, onProgress = () => 
         }
       }
 
-      // If in-place image optimization achieved < 15% reduction (e.g. heavy fonts or scanned pages):
-      if (bestBytes.length >= originalSize * 0.85) {
-        onProgress({ percent: 75, stage: 'Applying high-fidelity page optimization for strong reduction...' });
-        const visualBytes = await optimizeVisualDocPages(arrayBuffer, originalSize * 0.45, onProgress);
+      // For scanned documents, page re-encoding is natural and achieves major size reduction
+      // without degrading vector text (since pages are already scanned raster images).
+      // For text_vector and mixed documents, we preserve native vector text and do NOT rasterize by default.
+      if (docType === 'scanned') {
+        onProgress({ percent: 70, stage: 'Applying scanned page optimization...' });
+        const visualBytes = await optimizeVisualDocPages(arrayBuffer, originalSize * 0.40, onProgress);
         if (visualBytes && visualBytes.length < bestBytes.length) {
           bestBytes = visualBytes;
+          usedVisual = true;
         }
       }
 
@@ -1088,13 +1157,19 @@ export async function compressPdf(arrayBuffer, options = {}, onProgress = () => 
         compressedBytes: bestBytes,
         modeUsed: 'strong_compression',
         modeTitle: 'Strong Compression',
-        strategyUsed: 'Strong Progressive Compression',
+        strategyUsed: usedVisual ? 'Strong Visual Page Compression' : (docType === 'text_vector' ? 'Structural Stream Compaction' : 'Strong In-Place Image Compression'),
         targetMet: true,
         targetSizeBytes: null,
         targetSizeKb: null,
         qualityNotice: finalSize >= originalSize
-          ? 'Document verified and already optimally sized. Original file kept intact.'
-          : 'Strong compression applied. Document size significantly reduced while maintaining full legibility and searchability.',
+          ? (docType === 'text_vector'
+            ? 'This document consists entirely of vector text and embedded fonts, which are already optimally encoded. Original vector typography was preserved intact.'
+            : 'Document verified and already optimally sized. Original file kept intact.')
+          : (usedVisual
+            ? 'Scanned pages re-encoded with high-fidelity compression. Searchable text layer preserved.'
+            : (docType === 'text_vector'
+              ? 'Losslessly optimized document structure and compacted content streams. 100% vector typography remained sharp and selectable without blurry rasterization.'
+              : 'Strong compression applied. Photos and graphics were compacted while keeping all vector typography crisp and searchable.')),
         imagesProcessed: count,
         totalImages: imageCount,
       };
@@ -1373,7 +1448,9 @@ export async function compressPdf(arrayBuffer, options = {}, onProgress = () => 
     targetSizeKb,
     qualityNotice: targetMet
       ? `Target achieved: ${formatBytes(finalSize)} ≤ target ${formatBytes(targetSizeBytes)}. Document optimized to fit your required limit while maintaining full legibility and searchability.`
-      : `Target of ${formatBytes(targetSizeBytes)} was not reached. Reduced to ${formatBytes(finalSize)} (${Math.round(percentageReduction)}% saved). Further compression was stopped at safe visual limits to prevent severe degradation.`,
+      : (docType === 'text_vector'
+        ? `Target of ${formatBytes(targetSizeBytes)} was not reached. Reduced to ${formatBytes(finalSize)} (${Math.round(percentageReduction)}% saved). This document is primarily vector text and embedded fonts, which have limited compressibility. Converting pages to images would degrade quality below acceptable levels for this target.`
+        : `Target of ${formatBytes(targetSizeBytes)} was not reached. Reduced to ${formatBytes(finalSize)} (${Math.round(percentageReduction)}% saved). Further compression was stopped at safe visual limits to prevent severe degradation.`),
     imagesProcessed: imageCount,
     totalImages: imageCount,
   };
