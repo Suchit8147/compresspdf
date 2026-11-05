@@ -521,9 +521,9 @@ function optimizePdfStructure(pdfDoc) {
   try {
     for (const [, obj] of pdfDoc.context.enumerateIndirectObjects()) {
       if (obj instanceof PDFRawStream) {
-        const filter = obj.dict.get(PDFName.of('Filter'));
+        const filter = lookupValue(pdfDoc.context, obj.dict.get(PDFName.of('Filter')));
         const filterStr = filter ? filter.toString() : '';
-        const subtype = obj.dict.get(PDFName.of('Subtype'))?.toString();
+        const subtype = lookupValue(pdfDoc.context, obj.dict.get(PDFName.of('Subtype')))?.toString();
 
         if (subtype !== '/Image') {
           if (!filter || filterStr === '') {
