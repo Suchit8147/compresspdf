@@ -4,13 +4,11 @@ import {
   FileText, 
   ShieldCheck, 
   Lock, 
-  Sparkles, 
   AlertCircle 
 } from 'lucide-react';
 
 export default function HeroUpload({ onFileSelected, error, setError }) {
   const [isDragOver, setIsDragOver] = useState(false);
-  const [loadingSample, setLoadingSample] = useState(false);
   const fileInputRef = useRef(null);
 
   const validateAndHandleFile = async (file) => {
@@ -78,23 +76,6 @@ export default function HeroUpload({ onFileSelected, error, setError }) {
   const handleInputChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
       validateAndHandleFile(e.target.files[0]);
-    }
-  };
-
-  // Quick test sample PDF loader
-  const loadSamplePdf = async (samplePath, sampleName) => {
-    try {
-      setLoadingSample(true);
-      setError('');
-      const response = await fetch(samplePath);
-      if (!response.ok) throw new Error('Failed to load sample');
-      const blob = await response.blob();
-      const sampleFile = new File([blob], sampleName, { type: 'application/pdf' });
-      onFileSelected(sampleFile);
-    } catch (err) {
-      setError('Could not load sample PDF. You can upload any PDF from your device.');
-    } finally {
-      setLoadingSample(false);
     }
   };
 
@@ -180,39 +161,6 @@ export default function HeroUpload({ onFileSelected, error, setError }) {
                   <Lock className="w-3.5 h-3.5" /> 100% Private
                 </span>
               </div>
-            </div>
-          </div>
-
-          {/* Quick Sample Selector for immediate one-click testing */}
-          <div className="mt-5 p-3 rounded-2xl bg-slate-100/80 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex flex-wrap items-center justify-center gap-2 text-xs">
-            <span className="text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1">
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Don't have a PDF? Try a sample:
-            </span>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={loadingSample}
-                onClick={() => loadSamplePdf('/samples/sample-brochure.pdf', 'High-Res-Brochure.pdf')}
-                className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/50 text-indigo-600 dark:text-indigo-300 font-medium border border-slate-200 dark:border-slate-600 shadow-sm transition hover:border-indigo-300"
-              >
-                📄 Marketing Brochure (3.0 MB)
-              </button>
-              <button
-                type="button"
-                disabled={loadingSample}
-                onClick={() => loadSamplePdf('/samples/sample-presentation.pdf', 'Presentation-Deck.pdf')}
-                className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/50 text-indigo-600 dark:text-indigo-300 font-medium border border-slate-200 dark:border-slate-600 shadow-sm transition hover:border-indigo-300"
-              >
-                📊 Slide Deck (1.2 MB)
-              </button>
-              <button
-                type="button"
-                disabled={loadingSample}
-                onClick={() => loadSamplePdf('/samples/sample-scanned.pdf', 'Scanned-Document.pdf')}
-                className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/50 text-indigo-600 dark:text-indigo-300 font-medium border border-slate-200 dark:border-slate-600 shadow-sm transition hover:border-indigo-300"
-              >
-                📑 Scanned Contract (431 KB)
-              </button>
             </div>
           </div>
         </div>
