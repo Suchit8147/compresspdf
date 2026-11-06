@@ -123,21 +123,25 @@ export default function ResultCard({
         <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white">
           {isTargetMode
             ? result.targetMet
-              ? `Target Achieved: ${formatBytes(result.compressedSize)}`
-              : `Target Not Reached: Reduced to ${formatBytes(result.compressedSize)} (-${percentage}%)`
-            : result.isAlreadyOptimized
-              ? 'Your PDF is Already Maximally Optimized'
-              : `Compressed by ${percentage}% (${formatBytes(result.savedBytes)} Saved)`}
+              ? `Target Reached: ${formatBytes(result.compressedSize)}`
+              : `Target Not Reached: Reduced to ${formatBytes(result.compressedSize)}`
+            : result.isLargerThanInput
+              ? 'Compression Did Not Reduce This File'
+              : result.isNoReduction || result.isAlreadyOptimized
+                ? 'This PDF is Already Highly Optimized'
+                : `Compressed by ${percentage}% (${formatBytes(result.savedBytes)} Saved)`}
         </h2>
         
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-2 max-w-lg mx-auto">
           {isTargetMode
             ? result.targetMet
-              ? `Successfully reduced from ${formatBytes(result.originalSize)} to ${formatBytes(result.compressedSize)} (${percentage}% saved), achieving your ${formatBytes(result.targetSizeBytes)} target budget while preserving text and structure.`
-              : `Target of ${formatBytes(result.targetSizeBytes)} was not reached. File was reduced from ${formatBytes(result.originalSize)} to ${formatBytes(result.compressedSize)} (${formatBytes(result.savedBytes)} saved, -${percentage}%). Further compression was stopped to prevent severe visual degradation and maintain readability.`
-            : result.isAlreadyOptimized
-              ? 'This document consists of clean vector typography and contains no redundant streams. Your original file was kept intact so no bytes were added.'
-              : `Your file has been optimized from ${formatBytes(result.originalSize)} to ${formatBytes(result.compressedSize)}. All vector text remains selectable and searchable.`}
+              ? `Target reached. Your PDF was reduced from ${formatBytes(result.originalSize)} to ${formatBytes(result.compressedSize)} (${percentage}% saved).`
+              : `Target not reached. The best safe result was ${formatBytes(result.compressedSize)}. ${result.docType === 'text_vector' ? 'This PDF contains mostly text, vector graphics, and embedded fonts, so further reduction may require quality loss.' : 'Further compression was stopped at safe visual limits to prevent severe visual degradation.'}`
+            : result.isLargerThanInput
+              ? 'Compression did not reduce this file. Download the original or try a different compression mode.'
+              : result.isNoReduction || result.isAlreadyOptimized
+                ? 'This PDF is already highly optimized. We couldn’t reduce its size without changing its content or quality. Your original file was kept intact.'
+                : `Your PDF was reduced from ${formatBytes(result.originalSize)} to ${formatBytes(result.compressedSize)} (${percentage}% saved). All vector text and fonts remain selectable and searchable.`}
         </p>
 
         {/* Quality Notice / Prioritization Banner if applicable */}
@@ -362,6 +366,26 @@ export default function ResultCard({
           <FileCheck className="w-3.5 h-3.5 text-emerald-500" />
           Processed 100% locally in your browser. All pages, typography, and vector structures are preserved.
         </p>
+
+        {/* Development Diagnostic Report */}
+        {import.meta.env?.DEV && result.diagnostics && (
+          <details className="mt-6 p-4 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-left text-xs font-mono text-slate-700 dark:text-slate-300">
+            <summary className="font-bold cursor-pointer select-none text-indigo-600 dark:text-indigo-400">
+              🛠️ Developer Diagnostics (Dev Only)
+            </summary>
+            <div className="mt-3 space-y-1.5 overflow-x-auto text-[11px]">
+              <div><strong>Original Size:</strong> {result.diagnostics.originalSizeBytes} bytes ({formatBytes(result.diagnostics.originalSizeBytes)})</div>
+              <div><strong>Target Size:</strong> {result.diagnostics.targetSizeBytes ? `${result.diagnostics.targetSizeBytes} bytes (${formatBytes(result.diagnostics.targetSizeBytes)})` : 'None (Preset Mode)'}</div>
+              <div><strong>Output Size:</strong> {result.diagnostics.outputSizeBytes} bytes ({formatBytes(result.diagnostics.outputSizeBytes)})</div>
+              <div><strong>Compression:</strong> {result.diagnostics.compressionPercentage}%</div>
+              <div><strong>Target Met:</strong> {result.diagnostics.targetMet ? 'Yes' : 'No'}</div>
+              <div><strong>Stages Attempted:</strong> {result.diagnostics.stagesAttempted.join(', ')}</div>
+              <div><strong>Skipped Stages:</strong> {result.diagnostics.skippedStages.length ? result.diagnostics.skippedStages.join(', ') : 'None'}</div>
+              <div><strong>Image Settings:</strong> {JSON.stringify(result.diagnostics.imageSettingsUsed)}</div>
+              <div><strong>Errors Caught:</strong> {result.diagnostics.errorsEncountered.length ? result.diagnostics.errorsEncountered.join(', ') : 'None'}</div>
+            </div>
+          </details>
+        )}
 
       </div>
     </div>
