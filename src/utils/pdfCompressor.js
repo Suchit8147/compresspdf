@@ -723,12 +723,14 @@ async function optimizeVisualDocPages(arrayBuffer, targetSizeBytes = null, onPro
     const numPages = pdf.numPages;
 
     // Helper to render and assemble PDF at specific scale & jpegQuality
-    async function renderDocWithParams(scale, quality, progressBase, progressSpan) {
+    async function renderDocWithParams(scale, quality, includeTextLayer, progressBase, progressSpan) {
       const newDoc = await PDFDocument.create();
       let stdFont = null;
-      try {
-        stdFont = await newDoc.embedFont(StandardFonts.Helvetica);
-      } catch (_) {}
+      if (includeTextLayer) {
+        try {
+          stdFont = await newDoc.embedFont(StandardFonts.Helvetica);
+        } catch (_) {}
+      }
 
       for (let p = 1; p <= numPages; p++) {
         onProgress({
@@ -765,14 +767,13 @@ async function optimizeVisualDocPages(arrayBuffer, targetSizeBytes = null, onPro
           height: origViewport.height,
         });
 
-        // Overlay searchable text layer with standard WinAnsi chars and opacity 0.001
-        if (stdFont) {
+        // Overlay searchable text layer with standard WinAnsi chars when budget allows
+        if (includeTextLayer && stdFont) {
           try {
             const textContent = await page.getTextContent();
             if (textContent?.items?.length > 0) {
               for (const item of textContent.items) {
                 if (item.str && item.str.trim()) {
-                  // Only encode WinAnsi supported characters to prevent font error
                   const cleanStr = item.str.replace(/[^\x20-\x7E\xA0-\xFF]/g, ' ').trim();
                   if (!cleanStr) continue;
                   const tx = item.transform;
@@ -801,22 +802,23 @@ async function optimizeVisualDocPages(arrayBuffer, targetSizeBytes = null, onPro
     }
 
     // Determine target budget per page
-    const containerOverhead = Math.min(8192, Math.max(2048, numPages * 1024));
-    const targetDocBudget = targetSizeBytes ? Math.max(12000, targetSizeBytes - containerOverhead) : 100000;
-    // Conservative budget per page with 15% safety buffer
-    const budgetPerPage = (targetDocBudget * 0.85) / numPages;
+    const containerOverhead = Math.min(6144, Math.max(1500, numPages * 500));
+    const targetDocBudget = targetSizeBytes ? Math.max(8000, targetSizeBytes - containerOverhead) : 100000;
+    // Conservative budget per page with 12% safety buffer
+    const budgetPerPage = (targetDocBudget * 0.88) / numPages;
 
-    // Safe readability floors: never render so small that text becomes unreadable
-    const MIN_SAFE_SCALE = 0.70;
-    const MIN_SAFE_QUALITY = 0.30;
+    const MIN_SCALE = 0.35;
+    const MIN_QUALITY = 0.15;
 
     let scale = 1.0;
     let jpegQuality = 0.55;
+    let includeTextLayer = budgetPerPage >= 45000;
 
     if (!targetSizeBytes) {
       // Strong compression preset default
       scale = 1.0;
       jpegQuality = 0.50;
+      includeTextLayer = true;
     } else if (budgetPerPage >= 140000) {
       scale = 1.25;
       jpegQuality = 0.72;
@@ -827,48 +829,50 @@ async function optimizeVisualDocPages(arrayBuffer, targetSizeBytes = null, onPro
       scale = 0.95;
       jpegQuality = 0.52;
     } else if (budgetPerPage >= 30000) {
-      scale = 0.85;
-      jpegQuality = 0.44;
+      scale = 0.80;
+      jpegQuality = 0.42;
+    } else if (budgetPerPage >= 18000) {
+      scale = 0.65;
+      jpegQuality = 0.32;
+    } else if (budgetPerPage >= 10000) {
+      scale = 0.50;
+      jpegQuality = 0.24;
     } else {
-      scale = Math.max(MIN_SAFE_SCALE, 0.80 * Math.sqrt(budgetPerPage / 30000));
-      jpegQuality = Math.max(MIN_SAFE_QUALITY, Math.min(0.40, (budgetPerPage / 30000) * 0.44));
+      scale = Math.max(MIN_SCALE, 0.40 * Math.sqrt(budgetPerPage / 10000));
+      jpegQuality = Math.max(MIN_QUALITY, Math.min(0.20, (budgetPerPage / 10000) * 0.22));
     }
 
     // Pass 1: Render with initial calibrated settings
-    let bytes = await renderDocWithParams(scale, jpegQuality, 80, 10);
+    let bytes = await renderDocWithParams(scale, jpegQuality, includeTextLayer, 80, 10);
 
-    // Closed-loop iterative refinement (respecting safe visual floor):
-    // If target was specified and output exceeded targetSizeBytes, perform up to 3 adaptive refinements
+    // Closed-loop iterative refinement:
+    // If target was specified and output exceeded targetSizeBytes, perform up to 5 adaptive refinements
     if (targetSizeBytes && bytes.byteLength > targetSizeBytes) {
       let currentScale = scale;
       let currentQuality = jpegQuality;
-      const maxRefinements = 3;
+      let currentTextLayer = false; // Immediately drop invisible text layer if initial output is over budget
+      const maxRefinements = 5;
 
       for (let attempt = 0; attempt < maxRefinements && bytes.byteLength > targetSizeBytes; attempt++) {
         const ratio = targetSizeBytes / bytes.byteLength;
-        // Scale down proportionally with safety margin
-        const adjustFactor = Math.min(0.92, ratio * 0.90);
-        const nextScale = Math.max(MIN_SAFE_SCALE, currentScale * Math.sqrt(adjustFactor));
-        const nextQuality = Math.max(MIN_SAFE_QUALITY, currentQuality * Math.pow(adjustFactor, 0.55));
-
-        // If we've reached the safe readability floor, stop degrading quality
-        if (Math.abs(nextScale - currentScale) < 0.02 && Math.abs(nextQuality - currentQuality) < 0.02) {
-          break;
-        }
+        // Proportional correction with safety margin to guarantee hitting target
+        const adjustFactor = Math.min(0.88, ratio * 0.90);
+        const nextScale = Math.max(MIN_SCALE, currentScale * Math.sqrt(adjustFactor));
+        const nextQuality = Math.max(MIN_QUALITY, currentQuality * Math.pow(adjustFactor, 0.60));
 
         currentScale = nextScale;
         currentQuality = nextQuality;
 
         onProgress({
-          percent: 90 + attempt * 3,
-          stage: `Refinement ${attempt + 1}/${maxRefinements}: adjusting to hit target limit (scale: ${Math.round(currentScale * 100)}%, quality: ${Math.round(currentQuality * 100)}%)...`,
+          percent: 90 + attempt * 2,
+          stage: `Refining to meet target budget (${formatBytes(targetSizeBytes)})...`,
         });
 
-        const refinedBytes = await renderDocWithParams(currentScale, currentQuality, 90 + attempt * 3, 3);
-        if (refinedBytes.byteLength < bytes.byteLength) {
+        const refinedBytes = await renderDocWithParams(currentScale, currentQuality, currentTextLayer, 90 + attempt * 2, 2);
+        if (refinedBytes && refinedBytes.byteLength < bytes.byteLength) {
           bytes = refinedBytes;
         } else {
-          break; // No further improvement possible
+          break;
         }
       }
     }
