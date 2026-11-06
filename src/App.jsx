@@ -65,6 +65,7 @@ export default function App() {
   const [compressionOptions, setCompressionOptions] = useState({
     level: 'high_quality',
     targetSizeKb: null,
+    enhanceAi: true,
   });
 
   const [isProcessing, setIsProcessing] = useState(false);

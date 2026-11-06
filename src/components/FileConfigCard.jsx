@@ -285,6 +285,36 @@ export default function FileConfigCard({
             </div>
           </div>
 
+          {/* AI Clarity & Text Sharpening Control */}
+          <div className="flex items-center justify-between p-4 rounded-2xl bg-gradient-to-r from-purple-50/90 via-indigo-50/80 to-blue-50/80 dark:from-purple-950/40 dark:via-indigo-950/30 dark:to-blue-950/30 border border-purple-200/80 dark:border-purple-800/60 text-left transition shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/20 flex-shrink-0">
+                <Sparkles className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-slate-900 dark:text-white">AI Document Clarity & Text Sharpening</span>
+                  <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-xs">
+                    AI Active
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Deepens text contrast, cleans background grain, and sharpens character outlines to eliminate blur even at small target sizes.
+                </p>
+              </div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer ml-4 flex-shrink-0">
+              <input 
+                type="checkbox" 
+                checked={compressionOptions.enhanceAi !== false} 
+                disabled={isProcessing}
+                onChange={(e) => setCompressionOptions({ ...compressionOptions, enhanceAi: e.target.checked })} 
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-indigo-600"></div>
+            </label>
+          </div>
+
           {/* 2. STANDARD PRESETS (Low, Recommended, High) */}
           <div>
             <div className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 text-left">

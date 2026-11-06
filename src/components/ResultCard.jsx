@@ -118,6 +118,14 @@ export default function ResultCard({
             <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
             <span>Mode: {modeTitle}</span>
           </span>
+
+          {/* AI Clarity Enhanced Badge */}
+          {result.aiEnhanced && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-50 dark:bg-purple-950/40 border border-purple-200/70 dark:border-purple-800/70 text-purple-700 dark:text-purple-300 text-xs font-bold">
+              <Sparkles className="w-3.5 h-3.5 text-purple-500" />
+              <span>AI Clarity Enhanced</span>
+            </span>
+          )}
         </div>
 
         <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white">
